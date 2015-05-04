@@ -7,6 +7,21 @@ Marlin-renderer is an open source (GPL2+CP) Java2D RenderingEngine optimized for
 
 Marlin-Graphics provides an alternate Graphics2D implementation to redirect shape draw/fill operations to Marlin-renderer instead of Ductus/Pisces renderers (Oracle JDK / OpenJDK).
 
+Usage
+=====
+
+<pre>
+final BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+
+// Create the MarlinGraphics2D wrapping your image's Graphics2D implementation:
+final MarlinGraphics2D g2d = new MarlinGraphics2D(image);
+
+// Use g2d to perform java2d operations (draw, fill) as usual
+
+// Do not forget to dispose the graphics2D instance:
+g2d.dispose();
+</pre>
+
 License
 =======
 
