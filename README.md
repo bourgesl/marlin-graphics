@@ -7,7 +7,7 @@ Marlin renderer wrapped as a Graphics2D implementation:
 
 Marlin-Graphics provides an alternate Graphics2D implementation to redirect draw / fill shape operations to the Marlin-renderer instead of Ductus/Pisces renderers (Oracle JDK / OpenJDK): FAST and easy to use !
 
-=Marlin-Graphics does not require any bootclasspath change=: 
+*Marlin-Graphics does not require any bootclasspath change*: 
 Just add marlin-graphics and marlin-renderer jar files into your classpath to use it in your application !
 
 Usage
