@@ -138,7 +138,7 @@ public final class GeneralCompositePipe implements CompositePipe {
                 }
             }
         } else {
-            isBlendComposite = BlendComposite.class.equals(composite.getClass());
+            isBlendComposite = (BlendComposite.class == composite.getClass());
         }
         
         final CompositeContext compositeContext = composite.createContext(paintContext.getColorModel(), model, hints);

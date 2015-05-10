@@ -36,6 +36,7 @@ import java.io.IOException;
 import javax.imageio.ImageIO;
 import org.marlin.graphics.MarlinGraphics2D;
 import org.marlin.pisces.PiscesRenderingEngine;
+import org.marlin.pisces.stats.StatLong;
 import sun.java2d.pipe.RenderingEngine;
 
 /**
@@ -53,38 +54,64 @@ public class GLineTests {
     private final static Color COL_3 = (useColor) ? Color.green : Color.white;
     //new Color(192, 255, 192)
 
-    private final static boolean useCustomComposite = true;
+    private final static boolean useCustomComposite = false;
     private final static boolean drawThinLine = true;
 
     public static void main(String[] args) {
+        final int N = 100;
+        final boolean premultiplied = true;
+
         final int size = 600;
         final int width = size + 100;
         final int height = size;
 
         System.out.println("Testing renderer = " + RenderingEngine.getInstance().getClass().getName());
 
-        System.out.println("LineTests: size = " + width + " x " + height);
+        System.out.println("LineTests: size= (" + width + " x " + height + ") - premultiplied: " + premultiplied);
 
-        final BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        final BufferedImage image
+                            = new BufferedImage(width, height,
+                        (premultiplied) ? BufferedImage.TYPE_INT_ARGB_PRE : BufferedImage.TYPE_INT_ARGB);
 
         final MarlinGraphics2D g2d = new MarlinGraphics2D(image);
 
         g2d.setClip(0, 0, width, height);
 
-        g2d.setBackground(COL_1);
-        g2d.clearRect(0, 0, width, height);
+        StatLong stats = new StatLong("Lines");
 
-        final long start = System.nanoTime();
+        for (int i = 0; i < N; i++) {
+            g2d.setBackground(COL_1);
+            g2d.clearRect(0, 0, width, height);
 
-        paint(g2d, width, height);
+            final long start = System.nanoTime();
 
-        final long time = System.nanoTime() - start;
+            paint(g2d, width, height);
 
-        System.out.println("paint: duration= " + (1e-6 * time) + " ms.");
+            final long time = System.nanoTime() - start;
+            if (i > 3) {
+                // skip first iterations:
+                stats.add(time / 1000);
+            }
+
+            System.out.println("paint: duration= " + (1e-6 * time) + " ms.");
+        }
+        System.out.println("paint: stats µs: " + stats.toString());
+        
+        /*
+        premultiplied = false:
+            paint: duration= 35.923755 ms.
+            paint: stats µs: Lines[96] sum: 3476752 avg: 36216.166 [35915 | 37200]
+        
+        premultiplied = true:
+            paint: duration= 29.032576 ms.
+            paint: stats µs: Lines[96] sum: 2787396 avg: 29035.375 [28694 | 30081]
+        */
 
         try {
             final File file = new File(FILE_NAME + PiscesRenderingEngine.getSubPixel_Log2_X()
-                    + "x" + PiscesRenderingEngine.getSubPixel_Log2_Y() + BlendComposite.getBlendingMode() + ".png");
+                    + "x" + PiscesRenderingEngine.getSubPixel_Log2_Y() + BlendComposite.getBlendingMode()
+                    + (premultiplied ? "_pre" : "_nopre")
+                    + ".png");
 
             System.out.println("Writing file: " + file.getAbsolutePath());;
             ImageIO.write(image, "PNG", file);
@@ -100,7 +127,6 @@ public class GLineTests {
         final double size = Math.min(width, height);
 
         // Use BlendComposite.BlendingMode.SRC_OVER to perform gamma correction (2.2)
-        
         Composite c = (useCustomComposite)
                 ? BlendComposite.getInstance(BlendComposite.BlendingMode.SRC_OVER)
                 : AlphaComposite.SrcOver;
@@ -143,7 +169,6 @@ public class GLineTests {
             double alpha = 0.0;
 
             // BlendingMode.SRC_OVER
-
             for (double y = 0; y < height; y += yStep, alpha += step) {
                 g2d.setColor(new Color(COL_2.getRed(), COL_2.getGreen(), COL_2.getBlue(), (int) (255 * alpha)));
                 g2d.fillRect((int) height, (int) y, w, (int) yStep);
@@ -161,9 +186,9 @@ public class GLineTests {
     }
 
     private static void drawLine(final Path2D.Float path,
-            double x1, double y1,
-            double x2, double y2,
-            double width) {
+                                 double x1, double y1,
+                                 double x2, double y2,
+                                 double width) {
 
         double dx = x2 - x1;
         double dy = y2 - y1;

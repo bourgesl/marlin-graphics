@@ -19,6 +19,7 @@ import java.awt.RenderingHints;
 import java.awt.RenderingHints.Key;
 import java.awt.Shape;
 import java.awt.Stroke;
+import static java.awt.Transparency.OPAQUE;
 import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 import java.awt.geom.AffineTransform;
@@ -33,8 +34,18 @@ import java.awt.image.RenderedImage;
 import java.awt.image.renderable.RenderableImage;
 import java.text.AttributedCharacterIterator;
 import java.util.Map;
-import org.marlin.pisces.MarlinRenderingEngine;
+import sun.java2d.InvalidPipeException;
 import sun.java2d.SunGraphics2D;
+import sun.java2d.loops.CompositeType;
+import sun.java2d.loops.MaskFill;
+import sun.java2d.loops.SurfaceType;
+import sun.java2d.pipe.AlphaColorPipe;
+import sun.java2d.pipe.AlphaPaintPipe;
+import sun.java2d.pipe.CompositePipe;
+import sun.java2d.pipe.ParallelogramPipe;
+import sun.java2d.pipe.PixelToParallelogramConverter;
+import sun.java2d.pipe.ShapeDrawPipe;
+import sun.java2d.pipe.SpanClipRenderer;
 
 /*
  check AA hint => use marlin or use delegate !
@@ -43,28 +54,29 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     private final static boolean DEBUG = false;
 
-    // --- marlin integration ---
-    /** AAShapePipe singleton */
-    private static final AAShapePipe shapePipe;
-
-    static {
-        try {
-            final MarlinRenderingEngine renderengine = new MarlinRenderingEngine();
-            shapePipe = new AAShapePipe(renderengine, new GeneralCompositePipe());
-        } catch (Throwable th) {
-            throw new IllegalStateException("Unable to create MarlinRenderingEngine !", th);
-        }
-    }
+    /** redirect flag: true means to use Marlin instead of default rendering engine */
+    private final static boolean redirect = true;
+    /** redirect rectangle flag: true means to use Marlin instead of default rendering engine */
+    private final static boolean redirectRect = false;
 
     /* members */
     private final SunGraphics2D delegate;
-    private final BufferedImage image;
-    /** redirect flag: true means to use Marlin instead of default rendering engine */
-    private boolean redirect = true;
+//    private final BufferedImage image;
+    /* flag to validate pipeline */
+    private boolean validatePipe = true;
+    /* shared shape instances */
+    private final Rectangle rect = new Rectangle();
+    private final RoundRectangle2D.Float roundRect = new RoundRectangle2D.Float();
+    private final Line2D.Float line = new Line2D.Float();
+    private final Ellipse2D.Float ellipse = new Ellipse2D.Float();
+    private final Arc2D.Float arc = new Arc2D.Float();
 
     public MarlinGraphics2D(final BufferedImage image) {
-        if (image.getType() != BufferedImage.TYPE_INT_ARGB) {
-            throw new IllegalStateException("Unsupported image type: only TYPE_INT_ARGB !");
+        if (false) {
+            // only restricted when BlendComposite (gamma correction) will be ready for production:
+            if (image.getType() != BufferedImage.TYPE_INT_ARGB) {
+                throw new IllegalStateException("Unsupported image type: only TYPE_INT_ARGB !");
+            }
         }
         final Graphics2D g2d = image.createGraphics();
         if (!(g2d instanceof SunGraphics2D)) {
@@ -72,13 +84,13 @@ public final class MarlinGraphics2D extends Graphics2D {
             throw new IllegalStateException("BufferedImage.createGraphics() is not SunGraphics2D !");
         }
         this.delegate = (SunGraphics2D) g2d;
-        this.image = image;
+//        this.image = image;
 
         // Set rendering hints:
         setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
         setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         setRenderingHint(RenderingHints.KEY_COLOR_RENDERING, RenderingHints.VALUE_COLOR_RENDER_QUALITY);
-        setRenderingHint(RenderingHints.KEY_DITHERING, RenderingHints.VALUE_DITHER_ENABLE);
+        setRenderingHint(RenderingHints.KEY_DITHERING, RenderingHints.VALUE_DITHER_DEFAULT);
         setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
         setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_NORMALIZE);
@@ -101,245 +113,255 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     // --- shape operations (handled by Marlin) ---
     @Override
-    public void draw(Shape s) {
+    public void draw(final Shape s) {
         if (DEBUG) {
-            System.out.println("draw: " + s);
+            log("draw: " + s);
         }
         if (redirect) {
-            shapePipe.draw(delegate, s);
+            if (validatePipe) {
+                validatePipe(delegate);
+                if (DEBUG) {
+                    System.out.println("sg.shapepipe = " + shapepipe);
+                }
+            }
+            try {
+                shapepipe.draw(delegate, s);
+                delegate.surfaceData.markDirty();
+            } catch (InvalidPipeException e) {
+                delegate.draw(s);
+            }
         } else {
             delegate.draw(s);
         }
     }
 
     @Override
-    public void fill(Shape s) {
+    public void fill(final Shape s) {
         if (DEBUG) {
-            System.out.println("fill: " + s);
+            log("fill: " + s);
         }
         if (redirect) {
-            shapePipe.fill(delegate, s);
+            if (validatePipe) {
+                validatePipe(delegate);
+                if (DEBUG) {
+                    System.out.println("sg.shapepipe = " + shapepipe);
+                }
+            }
+            try {
+                shapepipe.fill(delegate, s);
+                delegate.surfaceData.markDirty();
+            } catch (InvalidPipeException e) {
+                delegate.fill(s);
+            }
         } else {
             delegate.fill(s);
         }
     }
 
     @Override
-    public void clearRect(int x, int y, int width, int height) {
-        if (DEBUG) {
-            System.out.println("clearRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
-        if (redirect) {
-            Composite c = delegate.getComposite();
-            Paint p = delegate.getPaint();
-            setComposite(AlphaComposite.Src);
-            setColor(getBackground());
-            fillRect(x, y, width, height);
-            setPaint(p);
-            setComposite(c);
-        } else {
-            delegate.clearRect(x, y, width, height);
-        }
-    }
-
-    @Override
-    public void drawRect(int x, int y, int width, int height) {
-        if (DEBUG) {
-            System.out.println("drawRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
-        if (redirect) {
-            // TODO: cache shapes instances:
-            draw(new Rectangle(x, y, width, height));
-        } else {
-            delegate.drawRect(x, y, width, height);
-        }
-    }
-
-    @Override
-    public void fillRect(int x, int y, int width, int height) {
-        if (DEBUG) {
-            System.out.println("fillRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
-        if (redirect) {
-            // TODO: cache shapes instances:
-            fill(new Rectangle(x, y, width, height));
-        } else {
-            delegate.fillRect(x, y, width, height);
-        }
-    }
-
-    @Override
-    public void drawRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
-        if (DEBUG) {
-            System.out.println("drawRoundRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
-        if (redirect) {
-            // TODO: cache shapes instances:
-            draw(new RoundRectangle2D.Float(x, y, width, height, arcWidth, arcHeight));
-        } else {
-            delegate.drawRoundRect(x, y, width, height, arcWidth, arcHeight);
-        }
-    }
-
-    @Override
-    public void fillRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
-        if (DEBUG) {
-            System.out.println("fillRoundRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
-        if (redirect) {
-            // TODO: cache shapes instances:
-            fill(new RoundRectangle2D.Float(x, y, width, height, arcWidth, arcHeight));
-        } else {
-            delegate.fillRoundRect(x, y, width, height, arcWidth, arcHeight);
-        }
-    }
-
-    @Override
-    public void draw3DRect(int x, int y, int width, int height, boolean raised) {
-        if (DEBUG) {
-            System.out.println("draw3DRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
-        if (redirect) {
-            super.draw3DRect(x, y, width, height, raised);
-        } else {
-            delegate.draw3DRect(x, y, width, height, raised);
-        }
-    }
-
-    @Override
-    public void fill3DRect(int x, int y, int width, int height, boolean raised) {
-        if (DEBUG) {
-            System.out.println("fill3DRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
-        if (redirect) {
-            super.fill3DRect(x, y, width, height, raised);
-        } else {
-            delegate.fill3DRect(x, y, width, height, raised);
-        }
-    }
-
-    @Override
     public void drawLine(int x1, int y1, int x2, int y2) {
-        if (DEBUG) {
-            System.out.println("drawLine: (" + x1 + "," + y1 + ") to (" + x2 + "," + y2 + ")");
-        }
         if (redirect) {
-            // TODO: cache shapes instances:
-            draw(new Line2D.Float(x1, y1, x2, y2));
+            line.setLine(x1, y1, x2, y2);
+            fill(line);
         } else {
+            if (DEBUG) {
+                log("drawLine: (" + x1 + "," + y1 + ") to (" + x2 + "," + y2 + ")");
+            }
             delegate.drawLine(x1, y1, x2, y2);
         }
     }
 
     @Override
     public void drawOval(int x, int y, int width, int height) {
-        if (DEBUG) {
-            System.out.println("drawOval: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
         if (redirect) {
-            // TODO: cache shapes instances:
-            draw(new Ellipse2D.Float(x, y, width, height));
+            ellipse.setFrame(x, y, width, height);
+            draw(ellipse);
         } else {
+            if (DEBUG) {
+                log("drawOval: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
             delegate.drawOval(x, y, width, height);
         }
     }
 
     @Override
     public void fillOval(int x, int y, int width, int height) {
-        if (DEBUG) {
-            System.out.println("fillOval: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
         if (redirect) {
-            // TODO: cache shapes instances:
-            fill(new Ellipse2D.Float(x, y, width, height));
+            ellipse.setFrame(x, y, width, height);
+            fill(ellipse);
         } else {
+            if (DEBUG) {
+                log("fillOval: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
             delegate.fillOval(x, y, width, height);
         }
     }
 
     @Override
     public void drawArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
-        if (DEBUG) {
-            System.out.println("drawArc: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
         if (redirect) {
-            // TODO: cache shapes instances:
-            draw(new Arc2D.Float(x, y, width, height,
-                    startAngle, arcAngle,
-                    Arc2D.OPEN));
+            arc.setArc(x, y, width, height, startAngle, arcAngle, Arc2D.OPEN);
+            draw(arc);
         } else {
+            if (DEBUG) {
+                log("drawArc: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
             delegate.drawArc(x, y, width, height, startAngle, arcAngle);
         }
     }
 
     @Override
     public void fillArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
-        if (DEBUG) {
-            System.out.println("fillArc: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
-        }
         if (redirect) {
-            // TODO: cache shapes instances:
-            fill(new Arc2D.Float(x, y, width, height,
-                    startAngle, arcAngle,
-                    Arc2D.PIE));
+            arc.setArc(x, y, width, height, startAngle, arcAngle, Arc2D.PIE);
+            fill(arc);
         } else {
+            if (DEBUG) {
+                log("fillArc: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
             delegate.fillArc(x, y, width, height, startAngle, arcAngle);
         }
     }
 
     @Override
     public void drawPolyline(int[] xPoints, int[] yPoints, int nPoints) {
-        if (DEBUG) {
-            System.out.println("drawPolyline: (" + nPoints + " points)");
-        }
         if (redirect) {
-            // TODO: cache shapes instances:
             draw(new Polygon(xPoints, yPoints, nPoints));
         } else {
+            if (DEBUG) {
+                log("drawPolyline: (" + nPoints + " points)");
+            }
             delegate.drawPolyline(xPoints, yPoints, nPoints);
         }
     }
 
     @Override
     public void drawPolygon(int[] xPoints, int[] yPoints, int nPoints) {
-        if (DEBUG) {
-            System.out.println("drawPolygon: (" + nPoints + " points)");
-        }
         if (redirect) {
-            // TODO: cache shapes instances:
             draw(new Polygon(xPoints, yPoints, nPoints));
         } else {
+            if (DEBUG) {
+                log("drawPolygon: (" + nPoints + " points)");
+            }
             delegate.drawPolygon(xPoints, yPoints, nPoints);
         }
     }
 
     @Override
     public void fillPolygon(int[] xPoints, int[] yPoints, int nPoints) {
-        if (DEBUG) {
-            System.out.println("fillPolygon: (" + nPoints + " points)");
-        }
         if (redirect) {
-            // TODO: cache shapes instances:
             fill(new Polygon(xPoints, yPoints, nPoints));
         } else {
+            if (DEBUG) {
+                log("fillPolygon: (" + nPoints + " points)");
+            }
             delegate.fillPolygon(xPoints, yPoints, nPoints);
         }
     }
 
     @Override
     public void drawPolygon(Polygon p) {
-        if (DEBUG) {
-            System.out.println("drawPolygon: " + p);
-        }
         draw(p);
     }
 
     @Override
     public void fillPolygon(Polygon p) {
-        if (DEBUG) {
-            System.out.println("fillPolygon: " + p);
-        }
         fill(p);
+    }
+
+    // --- rectangle operations ---
+    @Override
+    public void clearRect(int x, int y, int width, int height) {
+        if (redirectRect) {
+            final Composite c = delegate.getComposite();
+            final Paint p = delegate.getPaint();
+            setComposite(AlphaComposite.Src);
+            setColor(getBackground());
+            fillRect(x, y, width, height);
+            setPaint(p);
+            setComposite(c);
+        } else {
+            if (DEBUG) {
+                log("clearRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
+            delegate.clearRect(x, y, width, height);
+        }
+    }
+
+    @Override
+    public void drawRect(int x, int y, int width, int height) {
+        if (redirectRect) {
+            rect.setBounds(x, y, width, height);
+            draw(rect);
+        } else {
+            if (DEBUG) {
+                log("drawRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
+            delegate.drawRect(x, y, width, height);
+        }
+    }
+
+    @Override
+    public void fillRect(int x, int y, int width, int height) {
+        if (redirectRect) {
+            rect.setBounds(x, y, width, height);
+            fill(rect);
+        } else {
+            if (DEBUG) {
+                log("fillRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
+            delegate.fillRect(x, y, width, height);
+        }
+    }
+
+    @Override
+    public void drawRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
+        if (redirectRect) {
+            roundRect.setRoundRect(x, y, width, height, arcWidth, arcHeight);
+            draw(roundRect);
+        } else {
+            if (DEBUG) {
+                log("drawRoundRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
+            delegate.drawRoundRect(x, y, width, height, arcWidth, arcHeight);
+        }
+    }
+
+    @Override
+    public void fillRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
+        if (redirectRect) {
+            roundRect.setRoundRect(x, y, width, height, arcWidth, arcHeight);
+            fill(roundRect);
+        } else {
+            if (DEBUG) {
+                log("fillRoundRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
+            delegate.fillRoundRect(x, y, width, height, arcWidth, arcHeight);
+        }
+    }
+
+    @Override
+    public void draw3DRect(int x, int y, int width, int height, boolean raised) {
+        if (redirectRect) {
+            super.draw3DRect(x, y, width, height, raised);
+        } else {
+            if (DEBUG) {
+                log("draw3DRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
+            delegate.draw3DRect(x, y, width, height, raised);
+        }
+    }
+
+    @Override
+    public void fill3DRect(int x, int y, int width, int height, boolean raised) {
+        if (redirectRect) {
+            super.fill3DRect(x, y, width, height, raised);
+        } else {
+            if (DEBUG) {
+                log("fill3DRect: (" + x + "," + y + ") to (" + (x + width) + "," + (y + height) + ")");
+            }
+            delegate.fill3DRect(x, y, width, height, raised);
+        }
     }
 
     // --- other operations ---
@@ -372,6 +394,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void setColor(Color c) {
         delegate.setColor(c);
+        validatePipe = true;
     }
 
     @Override
@@ -382,6 +405,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void setComposite(Composite comp) {
         delegate.setComposite(comp);
+        validatePipe = true;
     }
 
     @Override
@@ -422,6 +446,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void setPaint(Paint paint) {
         delegate.setPaint(paint);
+        validatePipe = true;
     }
 
     @Override
@@ -520,11 +545,12 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void clip(Shape s) {
         delegate.clip(s);
+        validatePipe = true;
     }
 
     @Override
-    public void clipRect(int x, int y, int width, int height) {
-        delegate.clipRect(x, y, width, height);
+    public void clipRect(int x, int y, int w, int h) {
+        clip(new Rectangle(x, y, w, h));
     }
 
     @Override
@@ -548,8 +574,8 @@ public final class MarlinGraphics2D extends Graphics2D {
     }
 
     @Override
-    public void setClip(int x, int y, int width, int height) {
-        delegate.setClip(x, y, width, height);
+    public void setClip(int x, int y, int w, int h) {
+        setClip(new Rectangle(x, y, w, h));
     }
 
     @Override
@@ -557,6 +583,7 @@ public final class MarlinGraphics2D extends Graphics2D {
         return delegate.getClip();
     }
 
+    @Deprecated
     @Override
     public Rectangle getClipRect() {
         return getClipBounds();
@@ -565,6 +592,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void setClip(Shape clip) {
         delegate.setClip(clip);
+        validatePipe = true;
     }
 
     // --- img operations ---
@@ -660,6 +688,345 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawBytes(byte[] data, int offset, int length, int x, int y) {
         delegate.drawBytes(data, offset, length, x, y);
+    }
+
+    // --- utility ---
+    private static void log(final String msg) {
+        System.out.println(msg);
+    }
+
+    // --- marlin integration: mimics java2d pipelines ---
+
+    // SurfaceData instances:
+    private static final AlphaColorPipe colorPipe;//I
+    private static final CompositePipe clipColorPipe;//I
+    private static final AAShapePipe AAColorShape;//I
+    private static final PixelToParallelogramConverter AAColorViaShape;//U
+    private static final PixelToParallelogramConverter AAColorViaPgram;//U
+    private static final AAShapePipe AAClipColorShape;//I
+    private static final PixelToParallelogramConverter AAClipColorViaShape;//U
+
+    private static final CompositePipe paintPipe;//I
+    private static final CompositePipe clipPaintPipe;//I
+    private static final AAShapePipe AAPaintShape;//I
+    private static final PixelToParallelogramConverter AAPaintViaShape;//U
+    private static final AAShapePipe AAClipPaintShape;//I
+    private static final PixelToParallelogramConverter AAClipPaintViaShape;//U
+
+    private static final CompositePipe compPipe;//I
+    private static final CompositePipe clipCompPipe;//I
+    private static final AAShapePipe AACompShape;//I
+    private static final PixelToParallelogramConverter AACompViaShape;//U
+    private static final AAShapePipe AAClipCompShape;//I
+    private static final PixelToParallelogramConverter AAClipCompViaShape;//U
+
+    private static PixelToParallelogramConverter
+            makeConverter(AAShapePipe renderer,
+                          ParallelogramPipe pgrampipe) {
+        return new PixelToParallelogramConverter(renderer,
+                pgrampipe,
+                1.0 / 8.0, 0.499,
+                false);
+    }
+
+    private static PixelToParallelogramConverter
+            makeConverter(AAShapePipe renderer) {
+        return makeConverter(renderer, renderer);
+    }
+
+    static {
+        try {
+            colorPipe = new AlphaColorPipe();//I
+            clipColorPipe = new SpanClipRenderer(colorPipe);//I
+            AAColorShape = new AAShapePipe(colorPipe);//I
+            AAColorViaShape = makeConverter(AAColorShape);//U
+            AAColorViaPgram = makeConverter(AAColorShape, colorPipe);//U
+            AAClipColorShape = new AAShapePipe(clipColorPipe);//I
+            AAClipColorViaShape = makeConverter(AAClipColorShape);//U
+
+            paintPipe = new AlphaPaintPipe();//I
+            clipPaintPipe = new SpanClipRenderer(paintPipe);//I
+            AAPaintShape = new AAShapePipe(paintPipe);//I
+            AAPaintViaShape = makeConverter(AAPaintShape);//U
+            AAClipPaintShape = new AAShapePipe(clipPaintPipe);//I
+            AAClipPaintViaShape = makeConverter(AAClipPaintShape);//U
+
+            compPipe = new GeneralCompositePipe();//I
+            clipCompPipe = new SpanClipRenderer(compPipe);//I
+            AACompShape = new AAShapePipe(compPipe);//I
+            AACompViaShape = makeConverter(AACompShape);//U
+            AAClipCompShape = new AAShapePipe(clipCompPipe);//I
+            AAClipCompViaShape = makeConverter(AAClipCompShape);//U
+
+        } catch (Throwable th) {
+            throw new IllegalStateException("Unable to create MarlinGraphics2D pipeline (MarlinRenderingEngine) !", th);
+        }
+    }
+
+    // Custom SunGraphics2D pipeline:
+    private ShapeDrawPipe shapepipe;
+    private MaskFill alphafill;
+
+    private void validatePipe(SunGraphics2D sg2d) {
+        validatePipe = false;
+   
+        if (sg2d.compositeState == SunGraphics2D.COMP_XOR) {
+            throw new IllegalStateException("Unsupported Xor mode !");
+        }
+     
+        // to be in synch:
+        sg2d.validatePipe();
+        
+        // TODO: use my custom GeneralCompositePipe for BlendComposite !
+
+        /*
+         sg2d.imagepipe = imagepipe;
+         if (sg2d.compositeState == SunGraphics2D.COMP_XOR) {
+         if (sg2d.paintState > SunGraphics2D.PAINT_ALPHACOLOR) {
+         sg2d.drawpipe = paintViaShape;
+         sg2d.fillpipe = paintViaShape;
+         sg2d.shapepipe = paintShape;
+         // REMIND: Ideally custom paint mode would use glyph
+         // rendering as opposed to outline rendering but the
+         // glyph paint rendering pipeline uses MaskBlit which
+         // is not defined for XOR.  This means that text drawn
+         // in XOR mode with a Color object is different than
+         // text drawn in XOR mode with a Paint object.
+         sg2d.textpipe = outlineTextRenderer;
+         } else {
+         PixelToShapeConverter converter;
+         if (canRenderParallelograms(sg2d)) {
+         converter = colorViaPgram;
+         // Note that we use the transforming pipe here because it
+         // will examine the shape and possibly perform an optimized
+         // operation if it can be simplified.  The simplifications
+         // will be valid for all STROKE and TRANSFORM types.
+         sg2d.shapepipe = colorViaPgram;
+         } else {
+         converter = colorViaShape;
+         sg2d.shapepipe = colorPrimitives;
+         }
+         if (sg2d.clipState == SunGraphics2D.CLIP_SHAPE) {
+         sg2d.drawpipe = converter;
+         sg2d.fillpipe = converter;
+         // REMIND: We should not be changing text strategies
+         // between outline and glyph rendering based upon the
+         // presence of a complex clip as that could cause a
+         // mismatch when drawing the same text both clipped
+         // and unclipped on two separate rendering passes.
+         // Unfortunately, all of the clipped glyph rendering
+         // pipelines rely on the use of the MaskBlit operation
+         // which is not defined for XOR.
+         sg2d.textpipe = outlineTextRenderer;
+         } else {
+         if (sg2d.transformState >= SunGraphics2D.TRANSFORM_TRANSLATESCALE) {
+         sg2d.drawpipe = converter;
+         sg2d.fillpipe = converter;
+         } else {
+         if (sg2d.strokeState != SunGraphics2D.STROKE_THIN) {
+         sg2d.drawpipe = converter;
+         } else {
+         sg2d.drawpipe = colorPrimitives;
+         }
+         sg2d.fillpipe = colorPrimitives;
+         }
+         sg2d.textpipe = solidTextRenderer;
+         }
+         // assert(sg2d.surfaceData == this);
+         }
+         } else 
+         */
+        if (sg2d.compositeState == SunGraphics2D.COMP_CUSTOM) {
+//            if (sg2d.antialiasHint == SunHints.INTVAL_ANTIALIAS_ON) {
+            if (sg2d.clipState == SunGraphics2D.CLIP_SHAPE) {
+//                    drawpipe = AAClipCompViaShape;
+//                    fillpipe = AAClipCompViaShape;
+                shapepipe = AAClipCompViaShape;
+                //textpipe = clipCompText;
+            } else {
+//                    drawpipe = AACompViaShape;
+//                    fillpipe = AACompViaShape;
+                shapepipe = AACompViaShape;
+                //textpipe = compText;
+            }
+            /*                
+             } else {
+             drawpipe = compViaShape;
+             fillpipe = compViaShape;
+             shapepipe = compShape;
+             /*
+             if (sg2d.clipState == SunGraphics2D.CLIP_SHAPE) {
+             textpipe = clipCompText;
+             } else {
+             textpipe = compText;
+             }
+             }
+             */
+        } else /*if (sg2d.antialiasHint == SunHints.INTVAL_ANTIALIAS_ON)*/ {
+            alphafill = getMaskFill(sg2d);
+            if (alphafill != null) {
+                if (sg2d.clipState == SunGraphics2D.CLIP_SHAPE) {
+//                    drawpipe = AAClipColorViaShape;
+//                    fillpipe = AAClipColorViaShape;
+                    shapepipe = AAClipColorViaShape;
+                    //textpipe = clipColorText;
+                } else {
+                    PixelToParallelogramConverter converter
+                                                  = (alphafill.canDoParallelograms()
+                                    ? AAColorViaPgram
+                                    : AAColorViaShape);
+//                    drawpipe = converter;
+//                    fillpipe = converter;
+                    shapepipe = converter;
+                    /*
+                     if (sg2d.paintState > SunGraphics2D.PAINT_ALPHACOLOR ||
+                     sg2d.compositeState > SunGraphics2D.COMP_ISCOPY)
+                     {
+                     textpipe = colorText;
+                     } else {
+                     textpipe = getTextPipe(sg2d, true); // AA==ON
+                     }
+                     */
+                }
+            } else {
+                if (sg2d.clipState == SunGraphics2D.CLIP_SHAPE) {
+//                    drawpipe = AAClipPaintViaShape;
+//                    fillpipe = AAClipPaintViaShape;
+                    shapepipe = AAClipPaintViaShape;
+                    //textpipe = clipPaintText;
+                } else {
+//                    drawpipe = AAPaintViaShape;
+//                    fillpipe = AAPaintViaShape;
+                    shapepipe = AAPaintViaShape;
+                    //textpipe = paintText;
+                }
+            }
+        }
+        /*
+         else if (sg2d.paintState > SunGraphics2D.PAINT_ALPHACOLOR ||
+         sg2d.compositeState > SunGraphics2D.COMP_ISCOPY ||
+         sg2d.clipState == SunGraphics2D.CLIP_SHAPE)
+         {
+         sg2d.drawpipe = paintViaShape;
+         sg2d.fillpipe = paintViaShape;
+         sg2d.shapepipe = paintShape;
+         sg2d.alphafill = getMaskFill(sg2d);
+         // assert(sg2d.surfaceData == this);
+         if (sg2d.alphafill != null) {
+         if (sg2d.clipState == SunGraphics2D.CLIP_SHAPE) {
+         sg2d.textpipe = clipColorText;
+         } else {
+         sg2d.textpipe = colorText;
+         }
+         } else {
+         if (sg2d.clipState == SunGraphics2D.CLIP_SHAPE) {
+         sg2d.textpipe = clipPaintText;
+         } else {
+         sg2d.textpipe = paintText;
+         }
+         }
+         } else {
+         PixelToShapeConverter converter;
+         if (canRenderParallelograms(sg2d)) {
+         converter = colorViaPgram;
+         // Note that we use the transforming pipe here because it
+         // will examine the shape and possibly perform an optimized
+         // operation if it can be simplified.  The simplifications
+         // will be valid for all STROKE and TRANSFORM types.
+         sg2d.shapepipe = colorViaPgram;
+         } else {
+         converter = colorViaShape;
+         sg2d.shapepipe = colorPrimitives;
+         }
+         if (sg2d.transformState >= SunGraphics2D.TRANSFORM_TRANSLATESCALE) {
+         sg2d.drawpipe = converter;
+         sg2d.fillpipe = converter;
+         } else {
+         if (sg2d.strokeState != SunGraphics2D.STROKE_THIN) {
+         sg2d.drawpipe = converter;
+         } else {
+         sg2d.drawpipe = colorPrimitives;
+         }
+         sg2d.fillpipe = colorPrimitives;
+         }
+
+         sg2d.textpipe = getTextPipe(sg2d, false); // AA==OFF
+         // assert(sg2d.surfaceData == this);
+         }
+
+         // check for loops
+         if (sg2d.textpipe  instanceof LoopBasedPipe ||
+         sg2d.shapepipe instanceof LoopBasedPipe ||
+         sg2d.fillpipe  instanceof LoopBasedPipe ||
+         sg2d.drawpipe  instanceof LoopBasedPipe ||
+         sg2d.imagepipe instanceof LoopBasedPipe)
+         {
+         sg2d.loops = getRenderLoops(sg2d);
+         }
+         */
+    }
+
+    private static SurfaceType getPaintSurfaceType(SunGraphics2D sg2d) {
+        switch (sg2d.paintState) {
+            case SunGraphics2D.PAINT_OPAQUECOLOR:
+                return SurfaceType.OpaqueColor;
+            case SunGraphics2D.PAINT_ALPHACOLOR:
+                return SurfaceType.AnyColor;
+            case SunGraphics2D.PAINT_GRADIENT:
+                if (sg2d.paint.getTransparency() == OPAQUE) {
+                    return SurfaceType.OpaqueGradientPaint;
+                } else {
+                    return SurfaceType.GradientPaint;
+                }
+            case SunGraphics2D.PAINT_LIN_GRADIENT:
+                if (sg2d.paint.getTransparency() == OPAQUE) {
+                    return SurfaceType.OpaqueLinearGradientPaint;
+                } else {
+                    return SurfaceType.LinearGradientPaint;
+                }
+            case SunGraphics2D.PAINT_RAD_GRADIENT:
+                if (sg2d.paint.getTransparency() == OPAQUE) {
+                    return SurfaceType.OpaqueRadialGradientPaint;
+                } else {
+                    return SurfaceType.RadialGradientPaint;
+                }
+            case SunGraphics2D.PAINT_TEXTURE:
+                if (sg2d.paint.getTransparency() == OPAQUE) {
+                    return SurfaceType.OpaqueTexturePaint;
+                } else {
+                    return SurfaceType.TexturePaint;
+                }
+            default:
+            case SunGraphics2D.PAINT_CUSTOM:
+                return SurfaceType.AnyPaint;
+        }
+    }
+
+    private static CompositeType getFillCompositeType(SunGraphics2D sg2d) {
+        CompositeType compType = sg2d.imageComp;
+        if (sg2d.compositeState == SunGraphics2D.COMP_ISCOPY) {
+            if (compType == CompositeType.SrcOverNoEa) {
+                compType = CompositeType.OpaqueSrcOverNoEa;
+            } else {
+                compType = CompositeType.SrcNoEa;
+            }
+        }
+        return compType;
+    }
+
+    /**
+     * Returns a MaskFill object that can be used on this destination
+     * with the source (paint) and composite types determined by the given
+     * SunGraphics2D, or null if no such MaskFill object can be located.
+     * Subclasses can override this method if they wish to filter other
+     * attributes (such as the hardware capabilities of the destination
+     * surface) before returning a specific MaskFill object.
+     */
+    private static MaskFill getMaskFill(SunGraphics2D sg2d) {
+        SurfaceType src = getPaintSurfaceType(sg2d);
+        CompositeType comp = getFillCompositeType(sg2d);
+        SurfaceType dst = sg2d.surfaceData.getSurfaceType();
+        return MaskFill.getFromCache(src, comp, dst);
     }
 
 }

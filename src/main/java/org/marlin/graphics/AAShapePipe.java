@@ -28,6 +28,7 @@ import java.awt.BasicStroke;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.geom.Rectangle2D;
+import org.marlin.pisces.MarlinRenderingEngine;
 import sun.awt.SunHints;
 import sun.java2d.SunGraphics2D;
 import sun.java2d.pipe.AATileGenerator;
@@ -47,7 +48,8 @@ import sun.java2d.pipe.ShapeDrawPipe;
 public final class AAShapePipe
     implements ShapeDrawPipe, ParallelogramPipe
 {
-//    static RenderingEngine renderengine = RenderingEngine.getInstance();
+    // Force using Marlin Rendering Engine:
+    private final static RenderingEngine renderengine = new MarlinRenderingEngine();
 
     // Per-thread TileState (~1K very small so do not use any Weak Reference)
     private static final ThreadLocal<TileState> tileStateThreadLocal =
@@ -58,11 +60,9 @@ public final class AAShapePipe
         }
     };
 
-    final RenderingEngine renderengine;
     final CompositePipe outpipe;
 
-    public AAShapePipe(RenderingEngine renderengine, CompositePipe outpipe) {
-        this.renderengine = renderengine;
+    public AAShapePipe(CompositePipe outpipe) {
         this.outpipe = outpipe;
     }
 
