@@ -42,6 +42,7 @@ import sun.java2d.loops.SurfaceType;
 import sun.java2d.pipe.AlphaColorPipe;
 import sun.java2d.pipe.AlphaPaintPipe;
 import sun.java2d.pipe.CompositePipe;
+import sun.java2d.pipe.GeneralCompositePipe;
 import sun.java2d.pipe.ParallelogramPipe;
 import sun.java2d.pipe.PixelToParallelogramConverter;
 import sun.java2d.pipe.ShapeDrawPipe;
@@ -53,6 +54,8 @@ import sun.java2d.pipe.SpanClipRenderer;
 public final class MarlinGraphics2D extends Graphics2D {
 
     private final static boolean DEBUG = false;
+    /** force using blend composite (gamma correction) */
+    private final static boolean FORCE_BLEND_COMPOSITE = false;
 
     /** redirect flag: true means to use Marlin instead of default rendering engine */
     private final static boolean redirect = true;
@@ -60,40 +63,51 @@ public final class MarlinGraphics2D extends Graphics2D {
     private final static boolean redirectRect = false;
 
     /* members */
-    private final SunGraphics2D delegate;
-//    private final BufferedImage image;
+    final SunGraphics2D delegate;
     /* flag to validate pipeline */
     private boolean validatePipe = true;
     /* shared shape instances */
-    private final Rectangle rect = new Rectangle();
-    private final RoundRectangle2D.Float roundRect = new RoundRectangle2D.Float();
-    private final Line2D.Float line = new Line2D.Float();
-    private final Ellipse2D.Float ellipse = new Ellipse2D.Float();
-    private final Arc2D.Float arc = new Arc2D.Float();
+    private Rectangle rect = null;
+    private RoundRectangle2D.Float roundRect = null;
+    private Line2D.Float line = null;
+    private Ellipse2D.Float ellipse = null;
+    private Arc2D.Float arc = null;
 
     public MarlinGraphics2D(final BufferedImage image) {
-        if (false) {
-            // only restricted when BlendComposite (gamma correction) will be ready for production:
-            if (image.getType() != BufferedImage.TYPE_INT_ARGB) {
-                throw new IllegalStateException("Unsupported image type: only TYPE_INT_ARGB !");
-            }
-        }
+        // TODO: handle incompatiblity with BlendComposite (gamma correction) 
         final Graphics2D g2d = image.createGraphics();
         if (!(g2d instanceof SunGraphics2D)) {
             g2d.dispose();
             throw new IllegalStateException("BufferedImage.createGraphics() is not SunGraphics2D !");
         }
         this.delegate = (SunGraphics2D) g2d;
-//        this.image = image;
-
         // Set rendering hints:
+        setDefaultRenderingHints();
+    }
+    
+    public MarlinGraphics2D(final Graphics2D g2d) {
+        // TODO: handle incompatiblity with BlendComposite (gamma correction) 
+        if (g2d instanceof MarlinGraphics2D) {
+            final MarlinGraphics2D mg2d = (MarlinGraphics2D) g2d;
+            this.delegate = (SunGraphics2D)mg2d.delegate.create(); // clone delegate
+        } else if (g2d instanceof SunGraphics2D) {
+            this.delegate = (SunGraphics2D) g2d.create(); // clone delegate
+        } else {
+            g2d.dispose();
+            throw new IllegalStateException("Incompatible Graphics2D implementation="
+                    + g2d.getClass() +"; only SunGraphics2D or MarlinGraphics2D supported !");
+        }
+        // do not set rendering hints (already done ?)
+    }
+    
+    public void setDefaultRenderingHints() {
         setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION, RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
         setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         setRenderingHint(RenderingHints.KEY_COLOR_RENDERING, RenderingHints.VALUE_COLOR_RENDER_QUALITY);
         setRenderingHint(RenderingHints.KEY_DITHERING, RenderingHints.VALUE_DITHER_DEFAULT);
         setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
         setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_NORMALIZE);
+        setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_DEFAULT);
     }
 
     @Override
@@ -109,6 +123,17 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public String toString() {
         return delegate.toString();
+    }
+
+    // --- other operations ---
+    @Override
+    public Graphics create() {
+        return new MarlinGraphics2D(this);
+    }
+
+    @Override
+    public Graphics create(int x, int y, int width, int height) {
+        return super.create(x, y, width, height);
     }
 
     // --- shape operations (handled by Marlin) ---
@@ -161,6 +186,9 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawLine(int x1, int y1, int x2, int y2) {
         if (redirect) {
+            if (line == null) {
+                line = new Line2D.Float();
+            }
             line.setLine(x1, y1, x2, y2);
             fill(line);
         } else {
@@ -174,6 +202,9 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawOval(int x, int y, int width, int height) {
         if (redirect) {
+            if (ellipse == null) {
+                ellipse = new Ellipse2D.Float();
+            }
             ellipse.setFrame(x, y, width, height);
             draw(ellipse);
         } else {
@@ -187,6 +218,9 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void fillOval(int x, int y, int width, int height) {
         if (redirect) {
+            if (ellipse == null) {
+                ellipse = new Ellipse2D.Float();
+            }
             ellipse.setFrame(x, y, width, height);
             fill(ellipse);
         } else {
@@ -200,6 +234,9 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
         if (redirect) {
+            if (arc != null) {
+                arc = new Arc2D.Float();
+            }
             arc.setArc(x, y, width, height, startAngle, arcAngle, Arc2D.OPEN);
             draw(arc);
         } else {
@@ -213,6 +250,9 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void fillArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
         if (redirect) {
+            if (arc != null) {
+                arc = new Arc2D.Float();
+            }
             arc.setArc(x, y, width, height, startAngle, arcAngle, Arc2D.PIE);
             fill(arc);
         } else {
@@ -291,6 +331,9 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawRect(int x, int y, int width, int height) {
         if (redirectRect) {
+            if (rect == null) {
+                rect = new Rectangle();
+            }
             rect.setBounds(x, y, width, height);
             draw(rect);
         } else {
@@ -304,6 +347,9 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void fillRect(int x, int y, int width, int height) {
         if (redirectRect) {
+            if (rect == null) {
+                rect = new Rectangle();
+            }
             rect.setBounds(x, y, width, height);
             fill(rect);
         } else {
@@ -317,6 +363,9 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
         if (redirectRect) {
+            if (roundRect == null) {
+                roundRect = new RoundRectangle2D.Float();
+            }
             roundRect.setRoundRect(x, y, width, height, arcWidth, arcHeight);
             draw(roundRect);
         } else {
@@ -330,6 +379,9 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void fillRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
         if (redirectRect) {
+            if (roundRect == null) {
+                roundRect = new RoundRectangle2D.Float();
+            }
             roundRect.setRoundRect(x, y, width, height, arcWidth, arcHeight);
             fill(roundRect);
         } else {
@@ -362,17 +414,6 @@ public final class MarlinGraphics2D extends Graphics2D {
             }
             delegate.fill3DRect(x, y, width, height, raised);
         }
-    }
-
-    // --- other operations ---
-    @Override
-    public Graphics create() {
-        return delegate.create();
-    }
-
-    @Override
-    public Graphics create(int x, int y, int width, int height) {
-        return delegate.create(x, y, width, height);
     }
 
     // --- style operations ---
@@ -751,7 +792,7 @@ public final class MarlinGraphics2D extends Graphics2D {
             AAClipPaintShape = new AAShapePipe(clipPaintPipe);//I
             AAClipPaintViaShape = makeConverter(AAClipPaintShape);//U
 
-            compPipe = new GeneralCompositePipe();//I
+            compPipe = (FORCE_BLEND_COMPOSITE) ? new GammaCompositePipe() : new GeneralCompositePipe();//I
             clipCompPipe = new SpanClipRenderer(compPipe);//I
             AACompShape = new AAShapePipe(compPipe);//I
             AACompViaShape = makeConverter(AACompShape);//U
@@ -836,7 +877,8 @@ public final class MarlinGraphics2D extends Graphics2D {
          }
          } else 
          */
-        if (sg2d.compositeState == SunGraphics2D.COMP_CUSTOM) {
+        if (FORCE_BLEND_COMPOSITE
+                || sg2d.compositeState == SunGraphics2D.COMP_CUSTOM) {
 //            if (sg2d.antialiasHint == SunHints.INTVAL_ANTIALIAS_ON) {
             if (sg2d.clipState == SunGraphics2D.CLIP_SHAPE) {
 //                    drawpipe = AAClipCompViaShape;

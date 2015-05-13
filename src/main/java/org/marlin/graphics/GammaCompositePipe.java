@@ -35,7 +35,6 @@ import java.awt.image.ColorModel;
 import java.awt.image.BufferedImage;
 import java.awt.image.Raster;
 import java.awt.image.WritableRaster;
-import java.util.Arrays;
 import sun.awt.image.BufImgSurfaceData;
 import sun.java2d.SunGraphics2D;
 import sun.java2d.SurfaceData;
@@ -44,10 +43,7 @@ import sun.java2d.loops.MaskBlit;
 import sun.java2d.loops.CompositeType;
 import sun.java2d.pipe.CompositePipe;
 
-public final class GeneralCompositePipe implements CompositePipe {
-
-    // TODO: use System property (2.2 or 1.8 ...)
-    private final static boolean FORCE_CUSTOM_BLEND = false;
+public final class GammaCompositePipe implements CompositePipe {
 
     /**
      * Per-thread TileContext (very small so do not use any Soft or Weak Reference)
@@ -121,24 +117,21 @@ public final class GeneralCompositePipe implements CompositePipe {
         boolean extraAlpha = false;
         
         Composite composite = origComposite;
-        if (FORCE_CUSTOM_BLEND) {
-            if (origComposite instanceof AlphaComposite) {
-                final AlphaComposite ac = (AlphaComposite)origComposite;
 
-                if (ac.getRule() == AlphaComposite.SRC_OVER) {
-                    // only SrcOver implemented for now
-                    // TODO: implement all Porter-Duff rules 
-                    BlendComposite blendComposite = tc.getBlendComposite(BlendComposite.BlendingMode.SRC_OVER);
-                    // set (optional) extra alpha:
-                    blendComposite.setAlpha(ac.getAlpha());
-                    
-                    isBlendComposite = true;
-                    extraAlpha = blendComposite.hasExtraAlpha();
-                    composite = blendComposite;
-                }
+        if (origComposite instanceof AlphaComposite) {
+            final AlphaComposite ac = (AlphaComposite)origComposite;
+
+            if (ac.getRule() == AlphaComposite.SRC_OVER) {
+                // only SrcOver implemented for now
+                // TODO: implement all Porter-Duff rules 
+                BlendComposite blendComposite = tc.getBlendComposite(BlendComposite.BlendingMode.SRC_OVER);
+                // set (optional) extra alpha:
+                blendComposite.setAlpha(ac.getAlpha());
+
+                isBlendComposite = true;
+                extraAlpha = blendComposite.hasExtraAlpha();
+                composite = blendComposite;
             }
-        } else {
-            isBlendComposite = (BlendComposite.class == composite.getClass());
         }
         
         final CompositeContext compositeContext = composite.createContext(paintContext.getColorModel(), model, hints);
@@ -158,7 +151,8 @@ public final class GeneralCompositePipe implements CompositePipe {
     @Override
     public void renderPathTile(Object ctx,
                                byte[] atile, int offset, int tilesize,
-                               int x, int y, int w, int h) {
+                               int x, int y, int w, int h)
+    {
         final TileContext context = (TileContext) ctx;
         final PaintContext paintCtxt = context.paintCtxt;
         final CompositeContext compCtxt = context.compCtxt;
