@@ -1,8 +1,29 @@
+/*
+ * Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
+ *
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
+ */
 package org.marlin.graphics;
 
-/*******************************************************************************
- * Marlin-graphics project (GPLv2 + CP)
- ******************************************************************************/
 import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Composite;
@@ -55,7 +76,7 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     private final static boolean DEBUG = false;
     /** force using blend composite (gamma correction) */
-    private final static boolean FORCE_BLEND_COMPOSITE = false;
+    private final static boolean FORCE_BLEND_COMPOSITE = Boolean.getBoolean("MarlinGraphics.blendComposite");
 
     /** redirect flag: true means to use Marlin instead of default rendering engine */
     private final static boolean redirect = true;
@@ -107,7 +128,7 @@ public final class MarlinGraphics2D extends Graphics2D {
         setRenderingHint(RenderingHints.KEY_DITHERING, RenderingHints.VALUE_DITHER_DEFAULT);
         setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
         setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-        setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_DEFAULT);
+        setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
     }
 
     @Override
@@ -266,6 +287,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawPolyline(int[] xPoints, int[] yPoints, int nPoints) {
         if (redirect) {
+            // TODO: fix polygon is closed not opened ?
             draw(new Polygon(xPoints, yPoints, nPoints));
         } else {
             if (DEBUG) {

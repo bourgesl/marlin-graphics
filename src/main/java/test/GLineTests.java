@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,7 +35,7 @@ import java.io.File;
 import java.io.IOException;
 import javax.imageio.ImageIO;
 import org.marlin.graphics.MarlinGraphics2D;
-import org.marlin.pisces.PiscesRenderingEngine;
+import org.marlin.pisces.MarlinProperties;
 import org.marlin.pisces.stats.StatLong;
 import sun.java2d.pipe.RenderingEngine;
 
@@ -54,7 +54,7 @@ public class GLineTests {
     private final static Color COL_3 = (useColor) ? Color.green : Color.white;
     //new Color(192, 255, 192)
 
-    private final static boolean useCustomComposite = false;
+    private final static boolean useCustomComposite = true;
     private final static boolean drawThinLine = true;
 
     public static void main(String[] args) {
@@ -108,8 +108,8 @@ public class GLineTests {
         */
 
         try {
-            final File file = new File(FILE_NAME + PiscesRenderingEngine.getSubPixel_Log2_X()
-                    + "x" + PiscesRenderingEngine.getSubPixel_Log2_Y() + BlendComposite.getBlendingMode()
+            final File file = new File(FILE_NAME + MarlinProperties.getSubPixel_Log2_X()
+                    + "x" + MarlinProperties.getSubPixel_Log2_Y() + BlendComposite.getBlendingMode()
                     + (premultiplied ? "_pre" : "_nopre")
                     + ".png");
 
