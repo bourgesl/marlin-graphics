@@ -42,8 +42,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.3</version>
                 <configuration>
-                    <source>1.7</source>
-                    <target>1.7</target>
+                    <source>1.6</source>
+                    <target>1.6</target>
                     <debug>true</debug>
                     <encoding>UTF-8</encoding>
                 </configuration>
@@ -85,7 +85,7 @@
         <dependency>
             <groupId>org.marlin</groupId>
             <artifactId>marlin</artifactId>
-            <version>0.7.0-Unsafe</version>
+            <version>0.7.3.1-Unsafe</version>
             <!-- <scope>provided</scope> -->
         </dependency>
 
