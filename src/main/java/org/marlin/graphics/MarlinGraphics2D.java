@@ -55,6 +55,7 @@ import java.awt.image.RenderedImage;
 import java.awt.image.renderable.RenderableImage;
 import java.text.AttributedCharacterIterator;
 import java.util.Map;
+import org.marlin.geom.Path2D;
 import sun.java2d.InvalidPipeException;
 import sun.java2d.SunGraphics2D;
 import sun.java2d.loops.CompositeType;
@@ -81,7 +82,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     /** redirect flag: true means to use Marlin instead of default rendering engine */
     private final static boolean redirect = true;
     /** redirect rectangle flag: true means to use Marlin instead of default rendering engine */
-    private final static boolean redirectRect = false;
+    private final static boolean redirectRect = true;
 
     /* members */
     final SunGraphics2D delegate;
@@ -93,6 +94,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     private Line2D.Float line = null;
     private Ellipse2D.Float ellipse = null;
     private Arc2D.Float arc = null;
+    private Path2D.Float path = null;
 
     public MarlinGraphics2D(final BufferedImage image) {
         // TODO: handle incompatiblity with BlendComposite (gamma correction) 
@@ -211,7 +213,7 @@ public final class MarlinGraphics2D extends Graphics2D {
                 line = new Line2D.Float();
             }
             line.setLine(x1, y1, x2, y2);
-            fill(line);
+            draw(line);
         } else {
             if (DEBUG) {
                 log("drawLine: (" + x1 + "," + y1 + ") to (" + x2 + "," + y2 + ")");
@@ -287,8 +289,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawPolyline(int[] xPoints, int[] yPoints, int nPoints) {
         if (redirect) {
-            // TODO: fix polygon is closed not opened ?
-            draw(new Polygon(xPoints, yPoints, nPoints));
+            draw(createPath(xPoints, yPoints, nPoints, false));
         } else {
             if (DEBUG) {
                 log("drawPolyline: (" + nPoints + " points)");
@@ -300,7 +301,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawPolygon(int[] xPoints, int[] yPoints, int nPoints) {
         if (redirect) {
-            draw(new Polygon(xPoints, yPoints, nPoints));
+            draw(createPath(xPoints, yPoints, nPoints, true));
         } else {
             if (DEBUG) {
                 log("drawPolygon: (" + nPoints + " points)");
@@ -312,7 +313,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void fillPolygon(int[] xPoints, int[] yPoints, int nPoints) {
         if (redirect) {
-            fill(new Polygon(xPoints, yPoints, nPoints));
+            fill(createPath(xPoints, yPoints, nPoints, true));
         } else {
             if (DEBUG) {
                 log("fillPolygon: (" + nPoints + " points)");
@@ -330,6 +331,25 @@ public final class MarlinGraphics2D extends Graphics2D {
     public void fillPolygon(Polygon p) {
         fill(p);
     }
+
+    private Path2D.Float createPath(int[] xPoints, int[] yPoints, 
+                                      int nPoints, boolean close) {
+        if (path != null) {
+            path = new Path2D.Float(Path2D.WIND_EVEN_ODD, 
+                                    Math.max(1000, nPoints));
+        }
+        final Path2D.Float p = this.path;
+        p.reset();
+        p.moveTo(xPoints[0], yPoints[0]);
+        
+        for (int i = 1; i < nPoints; i++) {
+            p.lineTo(xPoints[i], yPoints[i]);
+        }
+        if (close) {
+            p.closePath();
+        }
+        return p;
+    }    
 
     // --- rectangle operations ---
     @Override

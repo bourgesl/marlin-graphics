@@ -85,7 +85,7 @@
         <dependency>
             <groupId>org.marlin</groupId>
             <artifactId>marlin</artifactId>
-            <version>0.7.3.1-Unsafe</version>
+            <version>0.7.3.2-Unsafe</version>
             <!-- <scope>provided</scope> -->
         </dependency>
 
