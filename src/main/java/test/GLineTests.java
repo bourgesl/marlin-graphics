@@ -25,10 +25,9 @@
 package test;
 
 import org.marlin.graphics.BlendComposite;
-import java.awt.AlphaComposite;
 import java.awt.Color;
-import java.awt.Composite;
 import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -54,10 +53,19 @@ public class GLineTests {
     private final static Color COL_3 = (useColor) ? Color.green : Color.white;
     //new Color(192, 255, 192)
 
-    private final static boolean useCustomComposite = true;
+    private final static boolean useGammaCorrection = false;
     private final static boolean drawThinLine = true;
 
     public static void main(String[] args) {
+        test("false");
+        test("true");
+    }
+        
+    public static void test(final String useAntialiasing) {
+        final String useBlendComposite = Boolean.toString(useGammaCorrection);
+
+        System.setProperty("MarlinGraphics.blendComposite", useBlendComposite);
+
         final int N = 100;
         final boolean premultiplied = true;
 
@@ -74,6 +82,10 @@ public class GLineTests {
                         (premultiplied) ? BufferedImage.TYPE_INT_ARGB_PRE : BufferedImage.TYPE_INT_ARGB);
 
         final MarlinGraphics2D g2d = new MarlinGraphics2D(image);
+
+        if ("false".equals(useAntialiasing)) {
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+        }
 
         g2d.setClip(0, 0, width, height);
 
@@ -96,7 +108,7 @@ public class GLineTests {
             System.out.println("paint: duration= " + (1e-6 * time) + " ms.");
         }
         System.out.println("paint: stats µs: " + stats.toString());
-        
+
         /*
         premultiplied = false:
             paint: duration= 35.923755 ms.
@@ -105,12 +117,13 @@ public class GLineTests {
         premultiplied = true:
             paint: duration= 29.032576 ms.
             paint: stats µs: Lines[96] sum: 2787396 avg: 29035.375 [28694 | 30081]
-        */
-
+         */
         try {
             final File file = new File(FILE_NAME + MarlinProperties.getSubPixel_Log2_X()
                     + "x" + MarlinProperties.getSubPixel_Log2_Y() + BlendComposite.getBlendingMode()
                     + (premultiplied ? "_pre" : "_nopre")
+                    + "-bc-" + useBlendComposite
+                    + "-aa-" + useAntialiasing
                     + ".png");
 
             System.out.println("Writing file: " + file.getAbsolutePath());;
@@ -125,13 +138,13 @@ public class GLineTests {
     private static void paint(final Graphics2D g2d, final double width, final double height) {
 
         final double size = Math.min(width, height);
-
+        /*
         // Use BlendComposite.BlendingMode.SRC_OVER to perform gamma correction (2.2)
         Composite c = (useCustomComposite)
                 ? BlendComposite.getInstance(BlendComposite.BlendingMode.SRC_OVER)
                 : AlphaComposite.SrcOver;
-
         g2d.setComposite(c);
+         */
 
         g2d.setColor(Color.RED);
         final double radius = 0.25 * Math.min(width, height);
@@ -173,9 +186,10 @@ public class GLineTests {
                 g2d.setColor(new Color(COL_2.getRed(), COL_2.getGreen(), COL_2.getBlue(), (int) (255 * alpha)));
                 g2d.fillRect((int) height, (int) y, w, (int) yStep);
             }
-
+            /*
             c = AlphaComposite.SrcOver;
             g2d.setComposite(c);
+             */
             alpha = 0.0;
 
             for (double y = 0; y < height; y += yStep, alpha += step) {

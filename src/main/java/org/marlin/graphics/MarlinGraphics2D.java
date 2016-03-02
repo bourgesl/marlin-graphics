@@ -53,6 +53,7 @@ import java.awt.image.BufferedImageOp;
 import java.awt.image.ImageObserver;
 import java.awt.image.RenderedImage;
 import java.awt.image.renderable.RenderableImage;
+import java.security.AccessController;
 import java.text.AttributedCharacterIterator;
 import java.util.Map;
 import org.marlin.geom.Path2D;
@@ -69,6 +70,7 @@ import sun.java2d.pipe.ParallelogramPipe;
 import sun.java2d.pipe.PixelToParallelogramConverter;
 import sun.java2d.pipe.ShapeDrawPipe;
 import sun.java2d.pipe.SpanClipRenderer;
+import sun.security.action.GetPropertyAction;
 
 /*
  check AA hint => use marlin or use delegate !
@@ -77,15 +79,15 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     private final static boolean DEBUG = false;
     /** force using blend composite (gamma correction) */
-    private final static boolean FORCE_BLEND_COMPOSITE = Boolean.getBoolean("MarlinGraphics.blendComposite");
+    private final static boolean FORCE_BLEND_COMPOSITE = getBoolean("MarlinGraphics.blendComposite", "false");
 
-    /** redirect flag: true means to use Marlin instead of default rendering engine */
-    private final static boolean redirect = true;
     /** redirect rectangle flag: true means to use Marlin instead of default rendering engine */
-    private final static boolean redirectRect = true;
+    private final static boolean REDIRECT_RECT = getBoolean("MarlinGraphics.redirectRect", "false");
 
     /* members */
     final SunGraphics2D delegate;
+    /** redirect flag: true means to use Marlin instead of default rendering engine */
+    private boolean redirect = true;
     /* flag to validate pipeline */
     private boolean validatePipe = true;
     /* shared shape instances */
@@ -121,6 +123,7 @@ public final class MarlinGraphics2D extends Graphics2D {
                     + g2d.getClass() +"; only SunGraphics2D or MarlinGraphics2D supported !");
         }
         // do not set rendering hints (already done ?)
+        updateRedirect();
     }
     
     public void setDefaultRenderingHints() {
@@ -354,7 +357,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     // --- rectangle operations ---
     @Override
     public void clearRect(int x, int y, int width, int height) {
-        if (redirectRect) {
+        if (REDIRECT_RECT && redirect) {
             final Composite c = delegate.getComposite();
             final Paint p = delegate.getPaint();
             setComposite(AlphaComposite.Src);
@@ -372,7 +375,7 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     @Override
     public void drawRect(int x, int y, int width, int height) {
-        if (redirectRect) {
+        if (REDIRECT_RECT && redirect) {
             if (rect == null) {
                 rect = new Rectangle();
             }
@@ -388,7 +391,7 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     @Override
     public void fillRect(int x, int y, int width, int height) {
-        if (redirectRect) {
+        if (REDIRECT_RECT && redirect) {
             if (rect == null) {
                 rect = new Rectangle();
             }
@@ -404,7 +407,7 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     @Override
     public void drawRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
-        if (redirectRect) {
+        if (REDIRECT_RECT && redirect) {
             if (roundRect == null) {
                 roundRect = new RoundRectangle2D.Float();
             }
@@ -420,7 +423,7 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     @Override
     public void fillRoundRect(int x, int y, int width, int height, int arcWidth, int arcHeight) {
-        if (redirectRect) {
+        if (REDIRECT_RECT && redirect) {
             if (roundRect == null) {
                 roundRect = new RoundRectangle2D.Float();
             }
@@ -436,7 +439,7 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     @Override
     public void draw3DRect(int x, int y, int width, int height, boolean raised) {
-        if (redirectRect) {
+        if (REDIRECT_RECT && redirect) {
             super.draw3DRect(x, y, width, height, raised);
         } else {
             if (DEBUG) {
@@ -448,7 +451,7 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     @Override
     public void fill3DRect(int x, int y, int width, int height, boolean raised) {
-        if (redirectRect) {
+        if (REDIRECT_RECT && redirect) {
             super.fill3DRect(x, y, width, height, raised);
         } else {
             if (DEBUG) {
@@ -561,6 +564,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void setRenderingHint(Key hintKey, Object hintValue) {
         delegate.setRenderingHint(hintKey, hintValue);
+        updateRedirect();
     }
 
     @Override
@@ -571,11 +575,17 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void setRenderingHints(Map<?, ?> hints) {
         delegate.setRenderingHints(hints);
+        updateRedirect();
     }
 
     @Override
     public void addRenderingHints(Map<?, ?> hints) {
         delegate.addRenderingHints(hints);
+        updateRedirect();
+    }
+    
+    private final void updateRedirect() {
+        this.redirect = (getRenderingHint(RenderingHints.KEY_ANTIALIASING) != RenderingHints.VALUE_ANTIALIAS_OFF);
     }
 
     // --- transform ---
@@ -777,6 +787,11 @@ public final class MarlinGraphics2D extends Graphics2D {
     private static void log(final String msg) {
         System.out.println(msg);
     }
+    
+    static boolean getBoolean(final String key, final String def) {
+        return Boolean.valueOf(AccessController.doPrivileged(
+                  new GetPropertyAction(key, def)));
+    }    
 
     // --- marlin integration: mimics java2d pipelines ---
 
@@ -859,8 +874,6 @@ public final class MarlinGraphics2D extends Graphics2D {
      
         // to be in synch:
         sg2d.validatePipe();
-        
-        // TODO: use my custom GeneralCompositePipe for BlendComposite !
 
         /*
          sg2d.imagepipe = imagepipe;
