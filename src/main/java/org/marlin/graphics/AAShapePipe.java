@@ -30,14 +30,13 @@ import java.awt.Shape;
 import java.awt.geom.Rectangle2D;
 import org.marlin.pisces.MarlinRenderingEngine;
 import sun.awt.SunHints;
-import sun.java2d.ReentrantContext;
-import sun.java2d.ReentrantContextProvider;
-import sun.java2d.ReentrantContextProviderTL;
+import org.marlin.ReentrantContext;
+import org.marlin.ReentrantContextProvider;
+import org.marlin.ReentrantContextProviderTL;
 import sun.java2d.SunGraphics2D;
 import sun.java2d.pipe.AATileGenerator;
 import sun.java2d.pipe.CompositePipe;
 import sun.java2d.pipe.ParallelogramPipe;
-import sun.java2d.pipe.Region;
 import sun.java2d.pipe.RenderingEngine;
 import sun.java2d.pipe.ShapeDrawPipe;
 

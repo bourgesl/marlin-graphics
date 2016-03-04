@@ -77,7 +77,7 @@ import sun.security.action.GetPropertyAction;
  */
 public final class MarlinGraphics2D extends Graphics2D {
 
-    private final static boolean DEBUG = false;
+    private final static boolean DEBUG = getBoolean("MarlinGraphics.debug", "false");
     /** force using blend composite (gamma correction) */
     private final static boolean FORCE_BLEND_COMPOSITE = getBoolean("MarlinGraphics.blendComposite", "false");
 
@@ -171,9 +171,6 @@ public final class MarlinGraphics2D extends Graphics2D {
         if (redirect) {
             if (validatePipe) {
                 validatePipe(delegate);
-                if (DEBUG) {
-                    System.out.println("sg.shapepipe = " + shapepipe);
-                }
             }
             try {
                 shapepipe.draw(delegate, s);
@@ -194,9 +191,6 @@ public final class MarlinGraphics2D extends Graphics2D {
         if (redirect) {
             if (validatePipe) {
                 validatePipe(delegate);
-                if (DEBUG) {
-                    System.out.println("sg.shapepipe = " + shapepipe);
-                }
             }
             try {
                 shapepipe.fill(delegate, s);

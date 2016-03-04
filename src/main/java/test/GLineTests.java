@@ -36,13 +36,17 @@ import javax.imageio.ImageIO;
 import org.marlin.graphics.MarlinGraphics2D;
 import org.marlin.pisces.MarlinProperties;
 import org.marlin.pisces.stats.StatLong;
-import sun.java2d.pipe.RenderingEngine;
 
 /**
  * Simple Line rendering test using GeneralPath to enable Pisces / marlin / ductus renderers
  */
 public class GLineTests {
 
+    // renderer setup:
+    private final static boolean isDebug = false;
+    private final static boolean useGammaCorrection = false;
+
+    // drawing setup:
     private final static String FILE_NAME = "LinesTest-gamma-norm-subpix_lg_";
     private final static boolean useColor = true;
     private final static Color COL_1 = (useColor) ? Color.blue : Color.white;
@@ -52,30 +56,34 @@ public class GLineTests {
 //    private final static Color COL_2 = Color.black;
     private final static Color COL_3 = (useColor) ? Color.green : Color.white;
     //new Color(192, 255, 192)
-
-    private final static boolean useGammaCorrection = false;
     private final static boolean drawThinLine = true;
 
     public static void main(String[] args) {
-        test("false");
-        test("true");
-    }
-        
-    public static void test(final String useAntialiasing) {
-        final String useBlendComposite = Boolean.toString(useGammaCorrection);
+        final String debug = Boolean.toString(isDebug);
+        System.setProperty("MarlinGraphics.debug", debug);
 
+        final String useBlendComposite = Boolean.toString(useGammaCorrection);
         System.setProperty("MarlinGraphics.blendComposite", useBlendComposite);
 
+        // BufferedImage.TYPE_INT_ARGB
+        test(false, false);
+        test(true, false);
+
+        // BufferedImage.TYPE_INT_ARGB_PRE
+        test(false, true);
+        test(true, true);
+    }
+
+    public static void test(final boolean antialiasing, final boolean premultiplied) {
+        final String useBlendComposite = System.getProperty("MarlinGraphics.blendComposite");
+
         final int N = 100;
-        final boolean premultiplied = true;
 
         final int size = 600;
         final int width = size + 100;
         final int height = size;
 
-        System.out.println("Testing renderer = " + RenderingEngine.getInstance().getClass().getName());
-
-        System.out.println("LineTests: size= (" + width + " x " + height + ") - premultiplied: " + premultiplied);
+        System.out.println("GLineTests: size= (" + width + " x " + height + ") - premultiplied: " + premultiplied);
 
         final BufferedImage image
                             = new BufferedImage(width, height,
@@ -83,13 +91,16 @@ public class GLineTests {
 
         final MarlinGraphics2D g2d = new MarlinGraphics2D(image);
 
-        if ("false".equals(useAntialiasing)) {
+        if (!antialiasing) {
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         }
 
         g2d.setClip(0, 0, width, height);
 
-        StatLong stats = new StatLong("Lines");
+        final Path2D.Float path = new Path2D.Float();
+        final StatLong stats = new StatLong("Lines");
+
+        final int M = Math.min(1 + (N / 10), 10);
 
         for (int i = 0; i < N; i++) {
             g2d.setBackground(COL_1);
@@ -97,33 +108,30 @@ public class GLineTests {
 
             final long start = System.nanoTime();
 
-            paint(g2d, width, height);
+            paint(g2d, width, height, path);
 
             final long time = System.nanoTime() - start;
-            if (i > 3) {
+            System.out.println("paint: duration= " + (1e-6 * time) + " ms.");
+
+            if (i > M) {
                 // skip first iterations:
                 stats.add(time / 1000);
             }
-
-            System.out.println("paint: duration= " + (1e-6 * time) + " ms.");
         }
-        System.out.println("paint: stats µs: " + stats.toString());
+        System.out.println("paint: stats (µs): " + stats.toString());
 
         /*
         premultiplied = false:
-            paint: duration= 35.923755 ms.
-            paint: stats µs: Lines[96] sum: 3476752 avg: 36216.166 [35915 | 37200]
-        
+        paint: stats (µs): Lines[89] sum: 3428391 avg: 38521.247 [38233 | 40767]        
         premultiplied = true:
-            paint: duration= 29.032576 ms.
-            paint: stats µs: Lines[96] sum: 2787396 avg: 29035.375 [28694 | 30081]
+        paint: stats (µs): Lines[89] sum: 3379135 avg: 37967.808 [37707 | 39714]
          */
         try {
             final File file = new File(FILE_NAME + MarlinProperties.getSubPixel_Log2_X()
                     + "x" + MarlinProperties.getSubPixel_Log2_Y() + BlendComposite.getBlendingMode()
                     + (premultiplied ? "_pre" : "_nopre")
                     + "-bc-" + useBlendComposite
-                    + "-aa-" + useAntialiasing
+                    + "-aa-" + antialiasing
                     + ".png");
 
             System.out.println("Writing file: " + file.getAbsolutePath());;
@@ -135,7 +143,9 @@ public class GLineTests {
         }
     }
 
-    private static void paint(final Graphics2D g2d, final double width, final double height) {
+    private static void paint(final Graphics2D g2d,
+                              final double width, final double height,
+                              final Path2D.Float path) {
 
         final double size = Math.min(width, height);
         /*
@@ -153,8 +163,6 @@ public class GLineTests {
 
         double thinStroke = 1.5;
         double lineStroke = 2.5;
-
-        final Path2D.Float path = new Path2D.Float();
 
         for (double angle = 1d / 5d; angle <= 90d; angle += 1d) {
             double angRad = Math.toRadians(angle);
