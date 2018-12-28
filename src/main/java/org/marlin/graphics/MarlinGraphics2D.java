@@ -254,7 +254,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void drawArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
         if (redirect) {
-            if (arc != null) {
+            if (arc == null) {
                 arc = new Arc2D.Float();
             }
             arc.setArc(x, y, width, height, startAngle, arcAngle, Arc2D.OPEN);
@@ -270,7 +270,7 @@ public final class MarlinGraphics2D extends Graphics2D {
     @Override
     public void fillArc(int x, int y, int width, int height, int startAngle, int arcAngle) {
         if (redirect) {
-            if (arc != null) {
+            if (arc == null) {
                 arc = new Arc2D.Float();
             }
             arc.setArc(x, y, width, height, startAngle, arcAngle, Arc2D.PIE);
@@ -331,7 +331,7 @@ public final class MarlinGraphics2D extends Graphics2D {
 
     private Path2D.Float createPath(int[] xPoints, int[] yPoints, 
                                       int nPoints, boolean close) {
-        if (path != null) {
+        if (path == null) {
             path = new Path2D.Float(Path2D.WIND_EVEN_ODD, 
                                     Math.max(1000, nPoints));
         }
