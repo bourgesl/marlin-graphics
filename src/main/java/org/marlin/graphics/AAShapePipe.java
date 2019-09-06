@@ -28,11 +28,11 @@ import java.awt.BasicStroke;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.geom.Rectangle2D;
-import org.marlin.pisces.MarlinRenderingEngine;
 import sun.awt.SunHints;
 import org.marlin.ReentrantContext;
 import org.marlin.ReentrantContextProvider;
 import org.marlin.ReentrantContextProviderTL;
+import org.marlin.pisces.DMarlinRenderingEngine;
 import sun.java2d.SunGraphics2D;
 import sun.java2d.pipe.AATileGenerator;
 import sun.java2d.pipe.CompositePipe;
@@ -48,25 +48,27 @@ import sun.java2d.pipe.ShapeDrawPipe;
  * and then passes them on to a CompositePipe object for painting.
  */
 public final class AAShapePipe
-        implements ShapeDrawPipe, ParallelogramPipe {
+    implements ShapeDrawPipe, ParallelogramPipe
+{
 
     // Force using Marlin Rendering Engine:
-    private final static RenderingEngine renderengine = new MarlinRenderingEngine();
+    static final RenderingEngine RDR_ENGINE = new DMarlinRenderingEngine();
 
     // Per-thread TileState (~1K very small so do not use any Weak Reference)
-    private static final ReentrantContextProvider<TileState> tileStateProvider
-        = new ReentrantContextProviderTL<TileState>(
-                    ReentrantContextProvider.REF_HARD) {
-        @Override
-        protected TileState newContext() {
-            return new TileState();
-        }
-    };
+    private static final ReentrantContextProvider<TileState> TILE_STATE_PROVIDER =
+            new ReentrantContextProviderTL<TileState>(
+                    ReentrantContextProvider.REF_HARD)
+            {
+                @Override
+                protected TileState newContext() {
+                    return new TileState();
+                }
+            };
 
     final CompositePipe outpipe;
 
-    public AAShapePipe(CompositePipe outpipe) {
-        this.outpipe = outpipe;
+    public AAShapePipe(CompositePipe pipe) {
+        outpipe = pipe;
     }
 
     @Override
@@ -94,20 +96,21 @@ public final class AAShapePipe
                                   double ux2, double uy2,
                                   double x, double y,
                                   double dx1, double dy1,
-                                  double dx2, double dy2) {
-        final TileState ts = tileStateProvider.acquire();
+                                  double dx2, double dy2)
+    {
+        final TileState ts = TILE_STATE_PROVIDER.acquire();
         try {
             final int[] abox = ts.abox;
 
-            final AATileGenerator aatg
-                                  = renderengine.getAATileGenerator(x, y, dx1, dy1, dx2, dy2, 0, 0,
-                            sg.getCompClip(), abox);
+            final AATileGenerator aatg =
+                RDR_ENGINE.getAATileGenerator(x, y, dx1, dy1, dx2, dy2, 0, 0,
+                                                sg.getCompClip(), abox);
             if (aatg != null) {
                 renderTiles(sg, ts.computeBBox(ux1, uy1, ux2, uy2),
-                        aatg, abox, ts);
+                            aatg, abox, ts);
             }
         } finally {
-            tileStateProvider.release(ts);
+            TILE_STATE_PROVIDER.release(ts);
         }
     }
 
@@ -118,54 +121,56 @@ public final class AAShapePipe
                                   double x, double y,
                                   double dx1, double dy1,
                                   double dx2, double dy2,
-                                  double lw1, double lw2) {
-        final TileState ts = tileStateProvider.acquire();
+                                  double lw1, double lw2)
+    {
+        final TileState ts = TILE_STATE_PROVIDER.acquire();
         try {
             final int[] abox = ts.abox;
 
-            final AATileGenerator aatg
-                                  = renderengine.getAATileGenerator(x, y, dx1, dy1, dx2, dy2, lw1,
-                            lw2, sg.getCompClip(), abox);
+            final AATileGenerator aatg =
+                RDR_ENGINE.getAATileGenerator(x, y, dx1, dy1, dx2, dy2, lw1,
+                                                lw2, sg.getCompClip(), abox);
             if (aatg != null) {
                 // Note that bbox is of the original shape, not the wide path.
                 // This is appropriate for handing to Paint methods...
                 renderTiles(sg, ts.computeBBox(ux1, uy1, ux2, uy2),
-                        aatg, abox, ts);
+                            aatg, abox, ts);
             }
         } finally {
-            tileStateProvider.release(ts);
+            TILE_STATE_PROVIDER.release(ts);
         }
     }
 
     public void renderPath(SunGraphics2D sg, Shape s, BasicStroke bs) {
-        final boolean adjust = (bs != null
-                && sg.strokeHint != SunHints.INTVAL_STROKE_PURE);
+        final boolean adjust = (bs != null &&
+                          sg.strokeHint != SunHints.INTVAL_STROKE_PURE);
         final boolean thin = (sg.strokeState <= SunGraphics2D.STROKE_THINDASHED);
 
-        final TileState ts = tileStateProvider.acquire();
+        final TileState ts = TILE_STATE_PROVIDER.acquire();
         try {
             final int[] abox = ts.abox;
 
-            final AATileGenerator aatg
-                                  = renderengine.getAATileGenerator(s, sg.transform, sg.getCompClip(),
-                            bs, thin, adjust, abox);
+            final AATileGenerator aatg =
+                RDR_ENGINE.getAATileGenerator(s, sg.transform, sg.getCompClip(),
+                                                bs, thin, adjust, abox);
             if (aatg != null) {
                 renderTiles(sg, s, aatg, abox, ts);
             }
         } finally {
-            tileStateProvider.release(ts);
+            TILE_STATE_PROVIDER.release(ts);
         }
     }
 
     public void renderTiles(SunGraphics2D sg, Shape s,
                             final AATileGenerator aatg,
-                            final int[] abox, final TileState ts) {
+                            final int[] abox, final TileState ts)
+    {
         Object context = null;
         try {
             // reentrance: outpipe may also use AAShapePipe:
             context = outpipe.startSequence(sg, s,
-                    ts.computeDevBox(abox),
-                    abox);
+                                            ts.computeDevBox(abox),
+                                            abox);
 
             // copy of int[] abox as local variables for performance:
             final int x0 = abox[0];
@@ -198,9 +203,11 @@ public final class AAShapePipe
                         aatg.nextTile();
                     } else {
                         atile = alpha;
+                        // could use w instead of tw (useless padding):
                         aatg.getAlpha(alpha, 0, tw);
                     }
 
+                    // could use w instead of tw (useless padding):
                     outpipe.renderPathTile(context, atile, 0, tw, x, y, w, h);
                 }
             }
@@ -214,7 +221,6 @@ public final class AAShapePipe
 
     // Tile state used by AAShapePipe
     static final class TileState extends ReentrantContext {
-
         // cached tile (32 x 32 tile by default)
         private byte[] theTile = new byte[32 * 32];
         // dirty aabox array
@@ -243,7 +249,8 @@ public final class AAShapePipe
         }
 
         Rectangle2D computeBBox(double ux1, double uy1,
-                                double ux2, double uy2) {
+                                double ux2, double uy2)
+        {
             if ((ux2 -= ux1) < 0.0) {
                 ux1 += ux2;
                 ux2 = -ux2;
