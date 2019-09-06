@@ -40,11 +40,9 @@ import org.marlin.pisces.stats.StatLong;
 /**
  * Simple Line rendering test using GeneralPath to enable Pisces / marlin / ductus renderers
  */
-public class GLineTests {
+public final class GLineTests {
 
-    // renderer setup:
-    private final static boolean isDebug = false;
-    private final static boolean useGammaCorrection = false;
+    private final static int N = 10;
 
     // drawing setup:
     private final static String FILE_NAME = "LinesTest-gamma-norm-subpix_lg_";
@@ -59,11 +57,11 @@ public class GLineTests {
     private final static boolean drawThinLine = true;
 
     public static void main(String[] args) {
-        final String debug = Boolean.toString(isDebug);
-        System.setProperty("MarlinGraphics.debug", debug);
+        final String debug = System.getProperty("MarlinGraphics.debug", "false");
+        System.out.println("MarlinGraphics.debug: " + debug);
 
-        final String useBlendComposite = Boolean.toString(useGammaCorrection);
-        System.setProperty("MarlinGraphics.blendComposite", useBlendComposite);
+        final String useBlendComposite = System.getProperty("MarlinGraphics.blendComposite", "false");
+        System.out.println("MarlinGraphics.blendComposite: " + useBlendComposite);
 
         // BufferedImage.TYPE_INT_ARGB
         test(false, false);
@@ -75,9 +73,7 @@ public class GLineTests {
     }
 
     public static void test(final boolean antialiasing, final boolean premultiplied) {
-        final String useBlendComposite = System.getProperty("MarlinGraphics.blendComposite");
-
-        final int N = 100;
+        final String useBlendComposite = System.getProperty("MarlinGraphics.blendComposite", "false");
 
         final int size = 600;
         final int width = size + 100;

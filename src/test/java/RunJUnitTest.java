@@ -30,11 +30,17 @@ import javax.imageio.ImageIO;
 import org.junit.Test;
 import org.marlin.geom.Path2D;
 import org.marlin.graphics.MarlinGraphics2D;
+import test.GLineTests;
 
 /**
  * Simple wrapper on MarlinGraphics tests
  */
 public class RunJUnitTest {
+
+    @Test
+    public void testLines() {
+        GLineTests.main(null);
+    }
 
     @Test
     public void testAPI() {

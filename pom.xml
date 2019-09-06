@@ -8,7 +8,7 @@
     <groupId>org.marlin</groupId>
     <artifactId>marlin-graphics</artifactId>
     <packaging>jar</packaging>
-    <version>0.2.4</version>
+    <version>0.2.5</version>
     <name>Marlin software rasterizer wrapper as Graphics2D implementation</name>
 
     <url>https://github.com/bourgesl/marlin-graphics</url>
@@ -20,7 +20,7 @@
     <properties>
         <maven.build.timestamp.format>yyyy/MM/dd HH:mm:ss</maven.build.timestamp.format>
         <marlin.path>/home/bourgesl/libs/marlin/mapbench/lib/</marlin.path>
-        <marlin.version>0.9.3-Unsafe</marlin.version>
+        <marlin.version>0.9.4.1-Unsafe</marlin.version>
     </properties>
 
     <build>
@@ -90,12 +90,28 @@
                     <argLine>
                         -Xms1g -Xmx1g
                         -Dsun.java2d.renderer.log=true
-                        -Dsun.java2d.renderer=org.marlin.pisces.DMarlinRenderingEngine
-                        -Xbootclasspath/a:${marlin.path}/marlin-${marlin.version}.jar
                         -DMarlinGraphics.debug=false
                         -DMarlinGraphics.redirectRect=true
                     </argLine>
                 </configuration>
+                <executions>
+                    <!-- RunJUnitTest -->
+                    <execution>
+                        <id>test-blend</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <includes>
+                                <include>**/RunJUnitTest.java</include>
+                            </includes>
+                            <argLine>
+                                -DMarlinGraphics.blendComposite=true
+                            </argLine>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
