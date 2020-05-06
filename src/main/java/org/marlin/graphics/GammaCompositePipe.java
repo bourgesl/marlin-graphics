@@ -25,22 +25,18 @@
 package org.marlin.graphics;
 
 import java.awt.AlphaComposite;
+import java.awt.Color;
 import java.awt.Composite;
-import java.awt.CompositeContext;
 import java.awt.PaintContext;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.RenderingHints;
 import java.awt.image.ColorModel;
-import java.awt.image.BufferedImage;
 import java.awt.image.Raster;
 import java.awt.image.WritableRaster;
-import sun.awt.image.BufImgSurfaceData;
 import sun.java2d.SunGraphics2D;
 import sun.java2d.SurfaceData;
-import sun.java2d.loops.Blit;
-import sun.java2d.loops.MaskBlit;
-import sun.java2d.loops.CompositeType;
+import sun.java2d.loops.SurfaceType;
 import sun.java2d.pipe.CompositePipe;
 
 public final class GammaCompositePipe implements CompositePipe {
@@ -57,86 +53,86 @@ public final class GammaCompositePipe implements CompositePipe {
 
     final static class TileContext {
 
-        SunGraphics2D sunG2D;
+        int colorRGBA;
         PaintContext paintCtxt;
-        CompositeContext compCtxt;
-        ColorModel compModel;
-        Object pipeState;
-        // LBO: cached values
-        boolean isBlendComposite;
-        int[] maskStride = new int[32];
+        BlendComposite.BlendingContext compCtxt;
         BlendComposite blendComposite = null;
-        boolean hasExtraAlpha = false;
+        SurfaceData sd = null;
 
         TileContext() {
             // ThreadLocal constructor
         }
 
-        void init(SunGraphics2D sg, PaintContext pCtx,
-                  CompositeContext cCtx, ColorModel cModel,
-                  boolean blendComposite, boolean extraAlpha)
-        {
-            sunG2D = sg;
-            paintCtxt = pCtx;
-            compCtxt = cCtx;
-            compModel = cModel;
-            isBlendComposite = blendComposite;
-            hasExtraAlpha = extraAlpha;
+        void init(final SurfaceData sd,
+                  final int colorRGBA, final PaintContext pCtx,
+                  final BlendComposite.BlendingContext cCtx,
+                  final BlendComposite blendComposite) {
+
+            this.colorRGBA = colorRGBA;
+            this.paintCtxt = pCtx;
+            this.compCtxt = cCtx;
+            this.blendComposite = blendComposite;
+            this.sd = sd;
         }
 
-        int[] getMaskStride(final int len) {
-            int[] t = maskStride;
-            if (t.length < len) {
-                // create a larger stride and may free current maskStride (too small)
-                maskStride = t = new int[len];
+        void dispose() {
+            this.colorRGBA = 0;
+            if (paintCtxt != null) {
+                paintCtxt.dispose();
+                paintCtxt = null;
             }
-            return t;
-        }
-        
-        BlendComposite getBlendComposite(BlendComposite.BlendingMode mode) {
-            if (blendComposite == null) {
-                blendComposite = BlendComposite.getInstance(mode);
-            }
-            return blendComposite;
+            compCtxt = null;
+            blendComposite = null;
+            sd = null;
         }
     }
 
     @Override
-    public Object startSequence(SunGraphics2D sg, Shape s, Rectangle devR,
-                                int[] abox) {
-        // warning: clone map:
-        final RenderingHints hints = sg.getRenderingHints();
-        final ColorModel model = sg.getDeviceColorModel();
-        final PaintContext paintContext = sg.paint.createContext(model, devR, s.getBounds2D(), sg.cloneTransform(), hints);
-        final Composite origComposite = sg.composite;
-        
-        // use ThreadLocal (to reduce memory footprint):
-        final TileContext tc = tileContextThreadLocal.get();
+    public Object startSequence(final SunGraphics2D sg, final Shape s, final Rectangle devR,
+                                final int[] abox) {
 
-        boolean isBlendComposite = false;
-        boolean extraAlpha = false;
-        
-        Composite composite = origComposite;
+        final int colorRGBA;
+        final PaintContext paintContext;
+        if (sg.paint instanceof Color) {
+            colorRGBA = ((Color) sg.paint).getRGB();
+            paintContext = null;
+        } else {
+            colorRGBA = 0;
+            // warning: clone hints map:
+            paintContext = sg.paint.createContext(sg.getDeviceColorModel(), devR, s.getBounds2D(),
+                    sg.cloneTransform(), sg.getRenderingHints());
+        }
+
+        final Composite origComposite = sg.composite;
+
+        BlendComposite blendComposite = null;
 
         if (origComposite instanceof AlphaComposite) {
-            final AlphaComposite ac = (AlphaComposite)origComposite;
+            final AlphaComposite ac = (AlphaComposite) origComposite;
 
             if (ac.getRule() == AlphaComposite.SRC_OVER) {
                 // only SrcOver implemented for now
                 // TODO: implement all Porter-Duff rules 
-                BlendComposite blendComposite = tc.getBlendComposite(BlendComposite.BlendingMode.SRC_OVER);
                 // set (optional) extra alpha:
-                blendComposite.setAlpha(ac.getAlpha());
-
-                isBlendComposite = true;
-                extraAlpha = blendComposite.hasExtraAlpha();
-                composite = blendComposite;
+                blendComposite = BlendComposite.getInstance(BlendComposite.BlendingMode.SRC_OVER, ac.getAlpha());
             }
         }
-        
-        final CompositeContext compositeContext = composite.createContext(paintContext.getColorModel(), model, hints);
 
-        tc.init(sg, paintContext, compositeContext, model, isBlendComposite, extraAlpha);
+        if (blendComposite == null) {
+            throw new IllegalArgumentException("Unsupported blending mode for composite: " + origComposite);
+        }
+
+        final SurfaceData sd = sg.getSurfaceData();
+
+        if ((sd.getSurfaceType() != SurfaceType.IntArgb) && (sd.getSurfaceType() != SurfaceType.IntArgbPre)) {
+            throw new IllegalArgumentException("Unsupported surface type: " + sd.getSurfaceType());
+        }
+
+        final BlendComposite.BlendingContext compositeContext = blendComposite.createContext();
+
+        // use ThreadLocal (to reduce memory footprint):
+        final TileContext tc = tileContextThreadLocal.get();
+        tc.init(sd, colorRGBA, paintContext, compositeContext, blendComposite);
         return tc;
     }
 
@@ -149,90 +145,43 @@ public final class GammaCompositePipe implements CompositePipe {
      * GeneralCompositePipe.renderPathTile works with custom composite operator provided by an application
      */
     @Override
-    public void renderPathTile(Object ctx,
-                               byte[] atile, int offset, int tilesize,
-                               int x, int y, int w, int h)
-    {
+    public void renderPathTile(final Object ctx,
+                               final byte[] atile, final int offset, final int tilesize,
+                               final int x, final int y, final int w, final int h) {
+
+        // System.out.println("render tile: (" + w + " x " + h + ")");
         final TileContext context = (TileContext) ctx;
+        final BlendComposite.BlendingContext compCtxt = context.compCtxt;
+
+        int rgba = 0;
         final PaintContext paintCtxt = context.paintCtxt;
-        final CompositeContext compCtxt = context.compCtxt;
-        final SunGraphics2D sg = context.sunG2D;
-        final boolean blendComposite = context.isBlendComposite;
-        final boolean extraAlpha = context.hasExtraAlpha;
+        final Raster srcRaster;
 
-        final Raster srcRaster = paintCtxt.getRaster(x, y, w, h);
-
-        final Raster dstIn;
-        final WritableRaster dstOut;
-
-        final SurfaceData sd = sg.getSurfaceData();
-        final Raster dstRaster = sd.getRaster(x, y, w, h);
-        if ((dstRaster instanceof WritableRaster) && (atile == null) && (!extraAlpha)) {
-            dstOut = ((WritableRaster) dstRaster).createWritableChild(x, y, w, h, 0, 0, null);
-            dstIn = dstOut;
+        if (paintCtxt != null) {
+            // // hack PaintContext -> cached tile is limited to 64x64 !
+            srcRaster = paintCtxt.getRaster(x, y, w, h);
         } else {
-            dstIn = dstRaster.createChild(x, y, w, h, 0, 0, null);
-
-            // TODO: cache such raster as it is very costly (int[])
-            dstOut = dstIn.createCompatibleWritableRaster();
+            // hack ColorPaintContext -> to avoid fill color on complete tile (cached tile is limited to 64x64):
+            rgba = context.colorRGBA;
+            srcRaster = null;
         }
 
-        if (blendComposite) {
-            // define mask alpha into dstOut:
+        final Raster dstRaster = context.sd.getRaster(x, y, w, h);
 
-            // INT_RGBA only: TODO: check raster format !
-            final int[] maskPixels = context.getMaskStride(w);
-
-            // atile = null means mask=255 (src opacity full)
-            if (atile == null) {
-                // TODO: use fill ?
-                for (int i = 0; i < w; i++) {
-                    maskPixels[i] = 0xFF;
-                }
-                for (int j = 0; j < h; j++) {
-                    // TODO: find most efficient method:
-                    dstOut.setDataElements(0, j, w, 1, maskPixels);
-                }
-            } else {
-                for (int j = 0; j < h; j++) {
-                    for (int i = 0; i < w; i++) {
-                        maskPixels[i] = atile[j * tilesize + (i + offset)] & 0xFF;
-                    }
-                    // TODO: find most efficient method:
-                    dstOut.setDataElements(0, j, w, 1, maskPixels);
-                }
-            }
+        if (!(dstRaster instanceof WritableRaster)) {
+            throw new IllegalStateException("Raster is not writable [" + dstRaster + "]");
         }
-        compCtxt.compose(srcRaster, dstIn, dstOut);
 
-        if (dstRaster != dstOut && dstOut.getParent() != dstRaster) {
-            if (dstRaster instanceof WritableRaster
-                    && ((blendComposite) || (atile == null))) {
-                // TODO: find most efficient method to copy between rasters (use transfer type ?)
-                ((WritableRaster) dstRaster).setDataElements(x, y, dstOut);
-            } else {
-                final ColorModel cm = sg.getDeviceColorModel();
-                final BufferedImage resImg
-                                    = new BufferedImage(cm, dstOut,
-                                cm.isAlphaPremultiplied(),
-                                null);
-                final SurfaceData resData = BufImgSurfaceData.createData(resImg);
-                if (atile == null) {
-                    final Blit blit = Blit.getFromCache(resData.getSurfaceType(),
-                            CompositeType.SrcNoEa,
-                            sd.getSurfaceType());
-                    blit.Blit(resData, sd, AlphaComposite.Src, null,
-                            0, 0, x, y, w, h);
-                } else {
-                    final MaskBlit blit = MaskBlit.getFromCache(resData.getSurfaceType(),
-                            CompositeType.SrcNoEa,
-                            sd.getSurfaceType());
-                    blit.MaskBlit(resData, sd, AlphaComposite.Src, null,
-                            0, 0, x, y, w, h,
-                            atile, offset, tilesize);
-                }
-            }
-        }
+        // System.out.println("createWritableChild: (" + w + " x " + h + ")");
+        final WritableRaster dstOut 
+        = ((WritableRaster) dstRaster).createWritableChild(x, y, w, h, 0, 0, null);
+        // = (WritableRaster)dstRaster;
+
+        // Perform compositing:
+        // srcRaster = paint raster
+        // dstIn = surface destination raster (input)
+        // dstOut = writable destination raster (output)
+        compCtxt.compose(rgba, srcRaster, atile, offset, tilesize, dstOut, w, h);
     }
 
     @Override
@@ -241,12 +190,6 @@ public final class GammaCompositePipe implements CompositePipe {
 
     @Override
     public void endSequence(Object ctx) {
-        final TileContext context = (TileContext) ctx;
-        if (context.paintCtxt != null) {
-            context.paintCtxt.dispose();
-        }
-        if (context.compCtxt != null) {
-            context.compCtxt.dispose();
-        }
+        ((TileContext) ctx).dispose();
     }
 }

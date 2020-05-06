@@ -42,7 +42,7 @@ import org.marlin.pisces.stats.StatLong;
  */
 public final class GLineTests {
 
-    private final static int N = 10;
+    private final static int N = 100;
 
     // drawing setup:
     private final static String FILE_NAME = "LinesTest-gamma-norm-subpix_lg_";
@@ -64,11 +64,11 @@ public final class GLineTests {
         System.out.println("MarlinGraphics.blendComposite: " + useBlendComposite);
 
         // BufferedImage.TYPE_INT_ARGB
-        test(false, false);
+//        test(false, false);
         test(true, false);
 
         // BufferedImage.TYPE_INT_ARGB_PRE
-        test(false, true);
+//        test(false, true);
         test(true, true);
     }
 
