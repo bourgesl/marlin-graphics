@@ -30,8 +30,6 @@ import java.awt.Composite;
 import java.awt.PaintContext;
 import java.awt.Rectangle;
 import java.awt.Shape;
-import java.awt.RenderingHints;
-import java.awt.image.ColorModel;
 import java.awt.image.Raster;
 import java.awt.image.WritableRaster;
 import sun.java2d.SunGraphics2D;
@@ -123,12 +121,14 @@ public final class GammaCompositePipe implements CompositePipe {
         }
 
         final SurfaceData sd = sg.getSurfaceData();
+        final SurfaceType sdt = sd.getSurfaceType();
 
-        if ((sd.getSurfaceType() != SurfaceType.IntArgb) && (sd.getSurfaceType() != SurfaceType.IntArgbPre)) {
-            throw new IllegalArgumentException("Unsupported surface type: " + sd.getSurfaceType());
+        if ((sdt != SurfaceType.IntArgb) && (sdt != SurfaceType.IntArgbPre)
+                && (sdt != SurfaceType.FourByteAbgr) && (sdt != SurfaceType.FourByteAbgrPre)) {
+            throw new IllegalArgumentException("Unsupported surface type: " + sdt);
         }
 
-        final BlendComposite.BlendingContext compositeContext = blendComposite.createContext();
+        final BlendComposite.BlendingContext compositeContext = blendComposite.createContext(sdt);
 
         // use ThreadLocal (to reduce memory footprint):
         final TileContext tc = tileContextThreadLocal.get();
@@ -173,8 +173,8 @@ public final class GammaCompositePipe implements CompositePipe {
         }
 
         // System.out.println("createWritableChild: (" + w + " x " + h + ")");
-        final WritableRaster dstOut 
-        = ((WritableRaster) dstRaster).createWritableChild(x, y, w, h, 0, 0, null);
+        final WritableRaster dstOut
+                             = ((WritableRaster) dstRaster).createWritableChild(x, y, w, h, 0, 0, null);
         // = (WritableRaster)dstRaster;
 
         // Perform compositing:

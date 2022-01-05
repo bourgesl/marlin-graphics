@@ -23,12 +23,12 @@
 
 import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import javax.imageio.ImageIO;
 import org.junit.Test;
-import org.marlin.geom.Path2D;
 import org.marlin.graphics.MarlinGraphics2D;
 import test.GLineTests;
 

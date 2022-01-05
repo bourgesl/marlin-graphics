@@ -34,15 +34,15 @@ import java.io.File;
 import java.io.IOException;
 import javax.imageio.ImageIO;
 import org.marlin.graphics.MarlinGraphics2D;
-import org.marlin.pisces.MarlinProperties;
-import org.marlin.pisces.stats.StatLong;
+import sun.java2d.marlin.MarlinProperties;
+import sun.java2d.marlin.stats.StatLong;
 
 /**
  * Simple Line rendering test using GeneralPath to enable Pisces / marlin / ductus renderers
  */
 public final class GLineTests {
 
-    private final static int N = 100;
+    private final static int N = 10;
 
     // drawing setup:
     private final static String FILE_NAME = "LinesTest-gamma-norm-subpix_lg_";
@@ -63,16 +63,19 @@ public final class GLineTests {
         final String useBlendComposite = System.getProperty("MarlinGraphics.blendComposite", "false");
         System.out.println("MarlinGraphics.blendComposite: " + useBlendComposite);
 
+        // BufferedImage.TYPE_4BYTE_ABGR
+        test(true, true, false);
+
         // BufferedImage.TYPE_INT_ARGB
 //        test(false, false);
-        test(true, false);
+        test(true, false, false);
 
         // BufferedImage.TYPE_INT_ARGB_PRE
 //        test(false, true);
-        test(true, true);
+        test(true, false, true);
     }
 
-    public static void test(final boolean antialiasing, final boolean premultiplied) {
+    public static void test(final boolean antialiasing, final boolean useBytes, final boolean premultiplied) {
         final String useBlendComposite = System.getProperty("MarlinGraphics.blendComposite", "false");
 
         final int size = 600;
@@ -83,7 +86,9 @@ public final class GLineTests {
 
         final BufferedImage image
                             = new BufferedImage(width, height,
-                        (premultiplied) ? BufferedImage.TYPE_INT_ARGB_PRE : BufferedImage.TYPE_INT_ARGB);
+                        (useBytes) ? ((premultiplied) ? BufferedImage.TYPE_4BYTE_ABGR_PRE : BufferedImage.TYPE_4BYTE_ABGR)
+                                : ((premultiplied) ? BufferedImage.TYPE_INT_ARGB_PRE : BufferedImage.TYPE_INT_ARGB)
+                );
 
         final MarlinGraphics2D g2d = new MarlinGraphics2D(image);
 
@@ -125,6 +130,7 @@ public final class GLineTests {
         try {
             final File file = new File(FILE_NAME + MarlinProperties.getSubPixel_Log2_X()
                     + "x" + MarlinProperties.getSubPixel_Log2_Y() + BlendComposite.getBlendingMode()
+                    + (useBytes ? "_byte" : "_int")
                     + (premultiplied ? "_pre" : "_nopre")
                     + "-bc-" + useBlendComposite
                     + "-aa-" + antialiasing
